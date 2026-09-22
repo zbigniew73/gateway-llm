@@ -52,9 +52,10 @@ systemctl --user restart gateway-llm
 **Claude Code:**
 ```bash
 export ANTHROPIC_BASE_URL=http://127.0.0.1:4444
-export ANTHROPIC_API_KEY=<GATEWAY_API_KEY z .env>
+export ANTHROPIC_AUTH_TOKEN=<GATEWAY_API_KEY z .env>
 claude
 ```
+(`ANTHROPIC_AUTH_TOKEN` zamiast `ANTHROPIC_API_KEY` — wysyła `Authorization: Bearer` i ma wyższy priorytet niż ewentualny, osobno ustawiony prawdziwy `ANTHROPIC_API_KEY`; gateway akceptuje oba nagłówki, ale to bezpieczniejszy wybór, żeby uniknąć konfliktu.)
 
 **Dowolny klient/SDK OpenAI-compatible (np. pi.dev):**
 ```
@@ -64,7 +65,7 @@ api_key:  <GATEWAY_API_KEY z .env>
 
 Auth: gateway akceptuje klucz zarówno w nagłówku `x-api-key` (tak wysyła Claude Code), jak i `Authorization: Bearer <klucz>` (klienci OpenAI-SDK).
 
-**Automatyczna konfiguracja Claude Code** (zamiast ręcznego `export` przed każdym uruchomieniem): skopiuj `.claude/settings.json.example` do `.claude/settings.json` w projekcie, w którym chcesz używać gatewaya (albo do `~/.claude/settings.json`, żeby dotyczyło wszystkich projektów), i podmień `ANTHROPIC_API_KEY` na wartość `GATEWAY_API_KEY` z Twojego `.env`. Claude Code odczyta te zmienne środowiskowe automatycznie przy starcie.
+**Automatyczna konfiguracja Claude Code** (zamiast ręcznego `export` przed każdym uruchomieniem): skopiuj `.claude/settings.json.example` do `.claude/settings.json` w projekcie, w którym chcesz używać gatewaya (albo do `~/.claude/settings.json`, żeby dotyczyło wszystkich projektów), i podmień `ANTHROPIC_AUTH_TOKEN` na wartość `GATEWAY_API_KEY` z Twojego `.env`. Claude Code odczyta te zmienne środowiskowe automatycznie przy starcie (dokładnie jak `export`) i użyje ich zamiast logowania OAuth — nie trzeba się wylogowywać.
 
 ## Konfiguracja (`config.yaml`)
 
