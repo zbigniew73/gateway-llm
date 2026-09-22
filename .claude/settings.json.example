@@ -1,0 +1,6 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:4444",
+    "ANTHROPIC_API_KEY": "REPLACE_WITH_GATEWAY_API_KEY_FROM_ENV"
+  }
+}

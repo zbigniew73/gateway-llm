@@ -1,0 +1,71 @@
+# gateway-llm
+
+Lekki, lokalny LLM gateway (odpowiednik "lite" LiteLLM proxy) do użytku osobistego. Jeden binarz Rust wystawia na `http://127.0.0.1:4444` dwa kompatybilne wire-protokoły jednocześnie:
+
+- `POST /v1/chat/completions` — OpenAI-compatible (dla dowolnego klienta/SDK mówiącego formatem OpenAI, np. pi.dev)
+- `POST /v1/messages` — Anthropic Messages API-compatible (dla Claude Code i innych klientów Anthropic-style), z pełną translacją do/z formatu OpenAI
+
+Backendy: OpenRouter, Novita.ai, Infron.ai, NVIDIA NIM — z routingiem po aliasach modeli i automatycznym fallbackiem między nimi.
+
+## Instalacja
+
+**Katalog docelowy: `~/gateway-llm` (katalog domowy użytkownika na maszynie docelowej)** — `install.sh` sam wykrywa swoją lokalizację i generuje unit systemd z tą ścieżką, ale rekomendowana/oczekiwana lokalizacja to właśnie katalog domowy, np. `/home/<user>/gateway-llm`, a nie zagnieżdżony gdzieś głębiej (np. `~/projekty_github/gateway-llm`).
+
+1. Skopiuj/sklonuj to repo na maszynę docelową dokładnie do `~/gateway-llm`:
+   ```bash
+   git clone <adres-repo> ~/gateway-llm
+   # albo: rsync -a ./gateway-llm/ user@host:~/gateway-llm/
+   cd ~/gateway-llm
+   ```
+2. Skonfiguruj klucze:
+   ```bash
+   cp .env.example .env
+   $EDITOR .env   # ustaw GATEWAY_API_KEY oraz klucze providerów, których faktycznie używasz
+   ```
+3. Dostosuj `config.yaml` — lista aliasów modeli i ich deploymentów (provider + model + zmienna env z kluczem, kolejność fallbacku).
+4. Uruchom instalator:
+   ```bash
+   ./install.sh
+   ```
+   Skrypt: doinstaluje `rustup`/Rust jeśli brak, zbuduje binarkę (`cargo build --release`), zainstaluje i uruchomi usługę `systemd --user` (`~/.config/systemd/user/gateway-llm.service`), oraz włączy `linger`, żeby usługa działała także bez aktywnej sesji logowania.
+
+## Zarządzanie usługą
+
+```bash
+systemctl --user status gateway-llm
+journalctl --user -u gateway-llm -f
+systemctl --user restart gateway-llm
+systemctl --user disable --now gateway-llm   # zatrzymanie/wyłączenie
+```
+
+## Aktualizacja
+
+```bash
+cd ~/gateway-llm
+git pull
+cargo build --release
+systemctl --user restart gateway-llm
+```
+
+## Użycie z klientami
+
+**Claude Code:**
+```bash
+export ANTHROPIC_BASE_URL=http://127.0.0.1:4444
+export ANTHROPIC_API_KEY=<GATEWAY_API_KEY z .env>
+claude
+```
+
+**Dowolny klient/SDK OpenAI-compatible (np. pi.dev):**
+```
+base_url: http://127.0.0.1:4444/v1
+api_key:  <GATEWAY_API_KEY z .env>
+```
+
+Auth: gateway akceptuje klucz zarówno w nagłówku `x-api-key` (tak wysyła Claude Code), jak i `Authorization: Bearer <klucz>` (klienci OpenAI-SDK).
+
+**Automatyczna konfiguracja Claude Code** (zamiast ręcznego `export` przed każdym uruchomieniem): skopiuj `.claude/settings.json.example` do `.claude/settings.json` w projekcie, w którym chcesz używać gatewaya (albo do `~/.claude/settings.json`, żeby dotyczyło wszystkich projektów), i podmień `ANTHROPIC_API_KEY` na wartość `GATEWAY_API_KEY` z Twojego `.env`. Claude Code odczyta te zmienne środowiskowe automatycznie przy starcie.
+
+## Konfiguracja (`config.yaml`)
+
+Każdy wpis w `model_list` to alias modelu (tego używają klienci w polu `model`) z uporządkowaną listą deploymentów — gateway próbuje ich po kolei (`order`) i automatycznie przechodzi do kolejnego przy błędzie (5xx/429/timeout), z cooldownem po serii błędów (`routing.error_threshold` / `routing.cooldown_seconds`).

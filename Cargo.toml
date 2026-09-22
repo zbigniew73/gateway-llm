@@ -1,0 +1,44 @@
+[package]
+name = "gateway-llm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Lightweight local LLM gateway exposing OpenAI- and Anthropic-compatible APIs over OpenAI-wire backends"
+license = "MIT"
+publish = false
+
+[lib]
+name = "gateway_llm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gateway-llm"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8.9"
+tokio = { version = "1.53", features = ["full"] }
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls",
+    "gzip",
+    "http2",
+] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+serde_yaml_ng = "0.10.0"
+thiserror = "2.0.20"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+dotenvy = "0.15.7"
+uuid = { version = "1.26.1", features = ["v4"] }
+futures = "0.3.34"
+async-stream = "0.3.6"
+eventsource-stream = "0.2.3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

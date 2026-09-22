@@ -1,0 +1,53 @@
+server:
+  host: 127.0.0.1
+  port: 4444
+
+routing:
+  request_timeout_seconds: 120
+  error_threshold: 3
+  error_window_seconds: 120
+  cooldown_seconds: 60
+
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    chat_path: /chat/completions
+  novita:
+    base_url: https://api.novita.ai/openai
+    chat_path: /v1/chat/completions
+  infron:
+    base_url: https://llm.onerouter.pro
+    chat_path: /v1/chat/completions
+  nvidia:
+    base_url: https://integrate.api.nvidia.com/v1
+    chat_path: /chat/completions
+
+model_list:
+  - model_name: claude-sonnet-4
+    deployments:
+      - provider: openrouter
+        model: anthropic/claude-sonnet-4
+        api_key_env: OPENROUTER_API_KEY
+        order: 1
+      - provider: infron
+        model: anthropic/claude-sonnet-4
+        api_key_env: INFRON_API_KEY
+        order: 2
+
+  - model_name: gpt-4o
+    deployments:
+      - provider: openrouter
+        model: openai/gpt-4o
+        api_key_env: OPENROUTER_API_KEY
+        order: 1
+
+  - model_name: glm-5.2
+    deployments:
+      - provider: infron
+        model: z-ai/glm-5.2
+        api_key_env: INFRON_API_KEY
+        order: 1
+      - provider: novita
+        model: zai-org/glm-5.2
+        api_key_env: NOVITA_API_KEY
+        order: 2
