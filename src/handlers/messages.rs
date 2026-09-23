@@ -43,6 +43,8 @@ pub async fn handle(
 
     let alias = request.model.clone();
     let stream = request.stream.unwrap_or(false);
+    let thinking_enabled = request.thinking_enabled();
+    let stop_sequences = request.stop_sequences().to_vec();
 
     let openai_request = anthropic_to_openai_request(&request)?;
     let payload = serde_json::to_value(&openai_request).map_err(|err| {
@@ -72,7 +74,8 @@ pub async fn handle(
             ))
         })?;
 
-        let translated = openai_to_anthropic_response(&parsed, &alias);
+        let translated =
+            openai_to_anthropic_response(&parsed, &alias, thinking_enabled, &stop_sequences);
         return Ok(Json(translated).into_response());
     }
 
@@ -85,7 +88,9 @@ pub async fn handle(
 
     let events = async_stream::stream! {
         let mut event_source = Box::pin(upstream.bytes_stream().eventsource());
-        let mut machine = StreamState::new(alias);
+        let mut machine = StreamState::new(alias)
+            .with_thinking(thinking_enabled)
+            .with_stop_sequences(stop_sequences);
 
         // Rozróżniamy zakończenie naturalne (`[DONE]` / koniec strumienia) od
         // przerwania błędem — inaczej klient dostałby fałszywy `message_stop`

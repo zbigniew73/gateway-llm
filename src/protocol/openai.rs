@@ -41,6 +41,26 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<OpenAiToolCall>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Rozszerzenie providerów (vLLM/NIM, DeepSeek, Qwen, GLM): tekst rozumowania.
+    /// `Value`, bo część providerów wysyła tu nie-string — nie może to wywrócić
+    /// parsowania całej odpowiedzi.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<Value>,
+    /// Rozszerzenie OpenRouter: tekst rozumowania.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<Value>,
+}
+
+/// Tekst rozumowania z `reasoning_content` albo `reasoning` (pierwszy niepusty string).
+pub fn reasoning_str<'a>(
+    reasoning_content: &'a Option<Value>,
+    reasoning: &'a Option<Value>,
+) -> Option<&'a str> {
+    [reasoning_content, reasoning]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .find(|text| !text.is_empty())
 }
 
 impl ChatMessage {
@@ -154,6 +174,9 @@ pub struct ChatChoice {
     pub message: ChatMessage,
     #[serde(default)]
     pub finish_reason: Option<String>,
+    /// Rozszerzenie vLLM/NIM: trafiona sekwencja stopu (string) albo id tokenu.
+    #[serde(default)]
+    pub stop_reason: Option<Value>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -190,6 +213,9 @@ pub struct ChunkChoice {
     pub delta: ChunkDelta,
     #[serde(default)]
     pub finish_reason: Option<String>,
+    /// Rozszerzenie vLLM/NIM: trafiona sekwencja stopu (string) albo id tokenu.
+    #[serde(default)]
+    pub stop_reason: Option<Value>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -200,4 +226,8 @@ pub struct ChunkDelta {
     pub content: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<OpenAiToolCall>>,
+    #[serde(default)]
+    pub reasoning_content: Option<Value>,
+    #[serde(default)]
+    pub reasoning: Option<Value>,
 }

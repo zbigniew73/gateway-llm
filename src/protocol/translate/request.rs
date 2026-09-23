@@ -157,6 +157,7 @@ fn build_assistant_message(blocks: &[AnthropicContentBlock]) -> Option<ChatMessa
             Some(tool_calls)
         },
         tool_call_id: None,
+        ..Default::default()
     })
 }
 
@@ -202,9 +203,12 @@ fn build_user_messages(
                     name: None,
                     tool_calls: None,
                     tool_call_id: Some(tool_use_id.clone()),
+                    ..Default::default()
                 });
             }
-            AnthropicContentBlock::ToolUse { .. } | AnthropicContentBlock::Unknown => {}
+            AnthropicContentBlock::ToolUse { .. }
+            | AnthropicContentBlock::Thinking { .. }
+            | AnthropicContentBlock::Unknown => {}
         }
     }
 
@@ -217,6 +221,7 @@ fn build_user_messages(
             name: None,
             tool_calls: None,
             tool_call_id: None,
+            ..Default::default()
         })
     } else {
         let text = parts

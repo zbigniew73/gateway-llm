@@ -456,6 +456,128 @@ fn error_event_has_anthropic_shape() {
     assert_eq!(field(&event, &["error", "message"]), "provider zamilkł");
 }
 
+// ---------------------------------------------------------------------------
+// Rozumowanie (thinking) i sekwencje stopu
+// ---------------------------------------------------------------------------
+
+fn reasoning_chunk(field_name: &str, text: &str) -> ChatCompletionChunk {
+    let mut delta = serde_json::Map::new();
+    delta.insert(field_name.to_string(), json!(text));
+    chunk(json!({
+        "id": "chatcmpl-test",
+        "choices": [{ "index": 0, "delta": delta, "finish_reason": null }]
+    }))
+}
+
+fn run_state(mut state: StreamState, chunks: Vec<ChatCompletionChunk>) -> Vec<SseEvent> {
+    let mut events = Vec::new();
+    for chunk in &chunks {
+        events.extend(state.handle_chunk(chunk));
+    }
+    events.extend(state.finish());
+    events
+}
+
+#[test]
+fn reasoning_becomes_thinking_block_before_text_when_enabled() {
+    let events = run_state(
+        StreamState::new("m").with_thinking(true),
+        vec![
+            reasoning_chunk("reasoning_content", "Najpierw "),
+            reasoning_chunk("reasoning_content", "liczę."),
+            text_chunk("4"),
+            finish_chunk("stop"),
+        ],
+    );
+
+    assert_eq!(
+        names(&events),
+        vec![
+            "message_start",
+            "content_block_start", // 0: thinking
+            "content_block_delta",
+            "content_block_delta",
+            "content_block_stop",
+            "content_block_start", // 1: text
+            "content_block_delta",
+            "content_block_stop",
+            "message_delta",
+            "message_stop",
+        ]
+    );
+    assert_eq!(field(&events[1], &["content_block", "type"]), "thinking");
+    assert_eq!(field(&events[2], &["delta", "type"]), "thinking_delta");
+    assert_eq!(field(&events[2], &["delta", "thinking"]), "Najpierw ");
+    assert_eq!(field(&events[5], &["index"]), 1);
+    assert_eq!(field(&events[5], &["content_block", "type"]), "text");
+}
+
+#[test]
+fn reasoning_is_dropped_when_thinking_not_requested() {
+    let events = run_state(
+        StreamState::new("m"),
+        vec![reasoning_chunk("reasoning_content", "sekret"), text_chunk("4"), finish_chunk("stop")],
+    );
+    assert_eq!(
+        names(&events),
+        vec![
+            "message_start",
+            "content_block_start",
+            "content_block_delta",
+            "content_block_stop",
+            "message_delta",
+            "message_stop",
+        ]
+    );
+    assert_eq!(field(&events[1], &["content_block", "type"]), "text");
+}
+
+#[test]
+fn openrouter_reasoning_delta_is_supported() {
+    let events = run_state(
+        StreamState::new("m").with_thinking(true),
+        vec![reasoning_chunk("reasoning", "myślę"), text_chunk("ok"), finish_chunk("stop")],
+    );
+    assert_eq!(field(&events[1], &["content_block", "type"]), "thinking");
+    assert_eq!(field(&events[2], &["delta", "thinking"]), "myślę");
+}
+
+#[test]
+fn stop_sequence_is_reported_when_provider_names_it() {
+    let stop = chunk(json!({
+        "id": "chatcmpl-test",
+        "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop", "stop_reason": "###" }]
+    }));
+    // OpenRouter powtarza finish_reason w chunku z usage — bez stop_reason.
+    let usage = chunk(json!({
+        "id": "chatcmpl-test",
+        "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }],
+        "usage": { "prompt_tokens": 5, "completion_tokens": 2 }
+    }));
+    let events = run_state(
+        StreamState::new("m").with_stop_sequences(vec!["###".to_string()]),
+        vec![text_chunk("abc"), stop, usage],
+    );
+    let message_delta = events.iter().find(|e| e.event == "message_delta").unwrap();
+    assert_eq!(field(message_delta, &["delta", "stop_reason"]), "stop_sequence");
+    assert_eq!(field(message_delta, &["delta", "stop_sequence"]), "###");
+}
+
+#[test]
+fn stop_reason_outside_client_sequences_is_plain_end_turn() {
+    let stop = chunk(json!({
+        "id": "chatcmpl-test",
+        "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop", "stop_reason": 151645 }]
+    }));
+    let events = run_state(
+        StreamState::new("m").with_stop_sequences(vec!["###".to_string()]),
+        vec![text_chunk("abc"), stop],
+    );
+    let message_delta = events.iter().find(|e| e.event == "message_delta").unwrap();
+    assert_eq!(field(message_delta, &["delta", "stop_reason"]), "end_turn");
+    assert_eq!(field(message_delta, &["delta", "stop_sequence"]), &Value::Null);
+}
+
 #[test]
 fn empty_content_deltas_do_not_open_blocks() {
     let (_state, events) = run(vec![

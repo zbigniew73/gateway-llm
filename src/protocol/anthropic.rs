@@ -1,6 +1,6 @@
 //! Typy Anthropic Messages API (`/v1/messages`).
 //!
-//! Nieznane typy bloków treści (np. `thinking`, `redacted_thinking`, przyszłe rozszerzenia)
+//! Nieznane typy bloków treści (np. `redacted_thinking`, dokumenty, przyszłe rozszerzenia)
 //! lądują w wariancie `Unknown` zamiast wywracać deserializację całego żądania.
 
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,25 @@ pub struct MessagesRequest {
     pub tools: Option<Vec<AnthropicTool>>,
     #[serde(default)]
     pub tool_choice: Option<AnthropicToolChoice>,
+    /// Konfiguracja extended thinking klienta (`{"type": "enabled", ...}`).
+    #[serde(default)]
+    pub thinking: Option<Value>,
+}
+
+impl MessagesRequest {
+    /// Czy klient chce bloków `thinking` w odpowiedzi. Tak jak w API Anthropic:
+    /// bez włączonego thinking rozumowanie modelu nie jest pokazywane.
+    pub fn thinking_enabled(&self) -> bool {
+        self.thinking
+            .as_ref()
+            .and_then(|thinking| thinking.get("type"))
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind != "disabled")
+    }
+
+    pub fn stop_sequences(&self) -> &[String] {
+        self.stop_sequences.as_deref().unwrap_or(&[])
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +114,15 @@ pub enum AnthropicContentBlock {
         #[serde(default)]
         is_error: Option<bool>,
     },
-    /// Wszystko, czego nie rozpoznajemy (np. `thinking`) — ignorowane w translacji.
+    /// Rozumowanie modelu. W odpowiedzi tworzone z `reasoning_content`/`reasoning`
+    /// providera; w żądaniu (echo poprzednich tur) ignorowane w translacji.
+    Thinking {
+        #[serde(default)]
+        thinking: String,
+        #[serde(default)]
+        signature: String,
+    },
+    /// Wszystko, czego nie rozpoznajemy (np. `redacted_thinking`) — ignorowane w translacji.
     #[serde(other)]
     Unknown,
 }
@@ -232,7 +259,9 @@ fn count_blocks(blocks: &[AnthropicContentBlock], bytes: &mut usize, tokens: &mu
                 Some(ToolResultContent::Blocks(nested)) => count_blocks(nested, bytes, tokens),
                 None => {}
             },
-            AnthropicContentBlock::Unknown => {}
+            // Rozumowanie z poprzednich tur nie trafia do providera (translacja je
+            // pomija), więc nie zajmuje kontekstu.
+            AnthropicContentBlock::Thinking { .. } | AnthropicContentBlock::Unknown => {}
         }
     }
 }

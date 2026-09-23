@@ -20,8 +20,8 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 
 use crate::protocol::anthropic::new_message_id;
-use crate::protocol::openai::{ChatCompletionChunk, OpenAiToolCall};
-use crate::protocol::translate::map_stop_reason;
+use crate::protocol::openai::{reasoning_str, ChatCompletionChunk, OpenAiToolCall};
+use crate::protocol::translate::{map_stop_reason, matched_stop_sequence};
 
 /// Pojedyncze zdarzenie SSE w formacie Anthropic (`event:` + `data:`).
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +55,7 @@ impl SseEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CurrentBlock {
+    Thinking { index: u32 },
     Text { index: u32 },
     ToolUse { index: u32, openai_tool_index: u32 },
 }
@@ -62,6 +63,7 @@ enum CurrentBlock {
 impl CurrentBlock {
     fn index(&self) -> u32 {
         match self {
+            CurrentBlock::Thinking { index } => *index,
             CurrentBlock::Text { index } => *index,
             CurrentBlock::ToolUse { index, .. } => *index,
         }
@@ -97,6 +99,12 @@ pub struct StreamState {
     finish_reason: Option<String>,
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
+    /// Czy klient włączył thinking — tylko wtedy rozumowanie idzie jako bloki `thinking`.
+    thinking_enabled: bool,
+    /// Sekwencje stopu z żądania klienta.
+    stop_sequences: Vec<String>,
+    /// Sekwencja stopu, którą provider wskazał jako przyczynę zatrzymania.
+    stop_sequence: Option<String>,
 }
 
 impl StreamState {
@@ -114,7 +122,20 @@ impl StreamState {
             finish_reason: None,
             input_tokens: None,
             output_tokens: None,
+            thinking_enabled: false,
+            stop_sequences: Vec::new(),
+            stop_sequence: None,
         }
+    }
+
+    pub fn with_thinking(mut self, enabled: bool) -> Self {
+        self.thinking_enabled = enabled;
+        self
+    }
+
+    pub fn with_stop_sequences(mut self, stop_sequences: Vec<String>) -> Self {
+        self.stop_sequences = stop_sequences;
+        self
     }
 
     /// Identyfikator wiadomości zgłaszany klientowi.
@@ -156,6 +177,23 @@ impl StreamState {
         }
 
         for choice in &chunk.choices {
+            if self.thinking_enabled {
+                if let Some(reasoning) =
+                    reasoning_str(&choice.delta.reasoning_content, &choice.delta.reasoning)
+                {
+                    self.open_thinking_block(&mut events);
+                    let block_index = self.current_block.map_or(0, |block| block.index());
+                    events.push(SseEvent::new(
+                        "content_block_delta",
+                        json!({
+                            "type": "content_block_delta",
+                            "index": block_index,
+                            "delta": { "type": "thinking_delta", "thinking": reasoning }
+                        }),
+                    ));
+                }
+            }
+
             if let Some(text) = choice.delta.content.as_ref().filter(|t| !t.is_empty()) {
                 self.open_text_block(&mut events);
                 let block_index = match self.current_block {
@@ -180,6 +218,15 @@ impl StreamState {
 
             if let Some(reason) = choice.finish_reason.as_ref().filter(|r| !r.is_empty()) {
                 self.finish_reason = Some(reason.clone());
+                // Chunk z usage (OpenRouter) powtarza finish_reason bez
+                // stop_reason — nie wolno nim wymazać już znalezionej sekwencji.
+                if let Some(matched) = matched_stop_sequence(
+                    Some(reason),
+                    choice.stop_reason.as_ref(),
+                    &self.stop_sequences,
+                ) {
+                    self.stop_sequence = Some(matched);
+                }
             }
         }
 
@@ -199,10 +246,12 @@ impl StreamState {
         self.finished = true;
 
         let has_tool_use = self.tool_buffers.values().any(|buffer| buffer.closed);
-        let stop_reason = if has_tool_use {
-            "tool_use".to_string()
+        let (stop_reason, stop_sequence) = if has_tool_use {
+            ("tool_use".to_string(), None)
+        } else if let Some(sequence) = self.stop_sequence.clone() {
+            ("stop_sequence".to_string(), Some(sequence))
         } else {
-            map_stop_reason(self.finish_reason.as_deref())
+            (map_stop_reason(self.finish_reason.as_deref()), None)
         };
 
         // OpenAI podaje usage dopiero na końcu streamu, więc `input_tokens`
@@ -217,7 +266,7 @@ impl StreamState {
             "message_delta",
             json!({
                 "type": "message_delta",
-                "delta": { "stop_reason": stop_reason, "stop_sequence": Value::Null },
+                "delta": { "stop_reason": stop_reason, "stop_sequence": stop_sequence },
                 "usage": usage
             }),
         ));
@@ -274,6 +323,27 @@ impl StreamState {
                         "output_tokens": 0
                     }
                 }
+            }),
+        ));
+    }
+
+    fn open_thinking_block(&mut self, events: &mut Vec<SseEvent>) {
+        if matches!(self.current_block, Some(CurrentBlock::Thinking { .. })) {
+            return;
+        }
+        self.close_current_block(events);
+
+        let index = self.next_block_index;
+        self.next_block_index += 1;
+        self.current_block = Some(CurrentBlock::Thinking { index });
+
+        events.push(SseEvent::new(
+            "content_block_start",
+            json!({
+                "type": "content_block_start",
+                "index": index,
+                // Podpisu (`signature`) nie mamy — to nie jest rozumowanie Claude'a.
+                "content_block": { "type": "thinking", "thinking": "", "signature": "" }
             }),
         ));
     }

@@ -1,6 +1,7 @@
-//! Fallback po błędach 400 na prawdziwym routerze i lokalnych serwerach HTTP:
-//! "za długi kontekst" przechodzi dalej (kolejny deployment / fallback_model),
-//! każde inne 400 kończy routing od razu.
+//! Fallback między deploymentami na prawdziwym routerze i lokalnych serwerach HTTP:
+//! - 400 "za długi kontekst" przechodzi dalej (kolejny deployment / fallback_model),
+//!   każde inne 400 kończy routing od razu;
+//! - deployment bez wolnego limitu RPM jest próbowany jako ostatnia deska ratunku.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -61,13 +62,20 @@ fn deployment(provider: &str, api_key_env: &str, order: i64) -> Deployment {
 }
 
 fn router(providers: Vec<(&str, u16)>, model_list: Vec<ModelEntry>) -> Router {
+    router_with(
+        providers
+            .into_iter()
+            .map(|(name, port)| (name.to_string(), provider(port)))
+            .collect(),
+        model_list,
+    )
+}
+
+fn router_with(providers: HashMap<String, ProviderConfig>, model_list: Vec<ModelEntry>) -> Router {
     let config = Config {
         server: ServerConfig::default(),
         routing: RoutingConfig::default(),
-        providers: providers
-            .into_iter()
-            .map(|(name, port)| (name.to_string(), provider(port)))
-            .collect::<HashMap<_, _>>(),
+        providers,
         model_list,
     };
     config.validate().expect("config testowy musi być poprawny");
@@ -177,4 +185,41 @@ async fn generic_400_does_not_trigger_fallback_model() {
     let result = router.dispatch("a", &body(), false, false, "test").await;
     assert!(result.is_err());
     assert_eq!(hits2.load(Ordering::SeqCst), 0, "fallback_model nie naprawi złego requestu");
+}
+
+#[tokio::test]
+async fn deployment_over_rpm_limit_is_still_tried_as_last_resort() {
+    let env = "GW_TEST_KEY_RPM_LAST_RESORT";
+    std::env::set_var(env, "k");
+    let (port1, hits1) = mock(200, OK_BODY).await;
+    let (port2, hits2) = mock(500, r#"{"error":{"message":"upstream down"}}"#).await;
+
+    let mut limited = provider(port1);
+    limited.rpm = Some(1);
+    let providers = HashMap::from([
+        ("p1".to_string(), limited),
+        ("p2".to_string(), provider(port2)),
+    ]);
+    let router = router_with(
+        providers,
+        vec![ModelEntry {
+            model_name: "a".to_string(),
+            deployments: vec![deployment("p1", env, 1), deployment("p2", env, 2)],
+            fallback_model: None,
+        }],
+    );
+
+    // 1. żądanie zużywa jedyny token p1.
+    let first = router.dispatch("a", &body(), false, false, "t1").await.unwrap();
+    assert_eq!(first.provider, "p1");
+
+    // 2. żądanie: p1 bez wolnego limitu idzie na koniec, p2 zwraca 500 —
+    // wtedy p1 musi zostać spróbowany, a nie pominięty.
+    let second = router
+        .dispatch("a", &body(), false, false, "t2")
+        .await
+        .expect("deployment bez wolnego limitu to ostatnia deska ratunku");
+    assert_eq!(second.provider, "p1");
+    assert_eq!(hits2.load(Ordering::SeqCst), 1, "najpierw deployment z wolnym limitem");
+    assert_eq!(hits1.load(Ordering::SeqCst), 2);
 }

@@ -135,20 +135,22 @@ impl Router {
             .model_entry(alias)
             .ok_or_else(|| Failure::Terminal(AppError::UnknownModel(alias.to_string())))?;
 
-        let mut candidates: Vec<&Deployment> = entry
+        // Kolejność: najpierw zdrowe z wolnym limitem RPM, potem zdrowe BEZ
+        // wolnego limitu (ostatnia deska ratunku — nasz kubełek to tylko
+        // szacunek, provider może jeszcze przyjąć żądanie). Deploymenty w
+        // cooldownie pomijamy, chyba że żaden inny nie jest dostępny.
+        let (mut candidates, over_limit): (Vec<&Deployment>, Vec<&Deployment>) = entry
             .deployments
             .iter()
-            .filter(|deployment| {
-                self.health.is_available(&deployment.health_key())
-                    && self.rate_limiter.has_capacity(&deployment.provider)
-            })
-            .collect();
+            .filter(|deployment| self.health.is_available(&deployment.health_key()))
+            .partition(|deployment| self.rate_limiter.has_capacity(&deployment.provider));
+        candidates.extend(over_limit);
 
         if candidates.is_empty() {
             tracing::warn!(
                 request_id,
                 alias,
-                "wszystkie deploymenty są w cooldownie albo bez wolnego limitu RPM — próbuję mimo to"
+                "wszystkie deploymenty są w cooldownie — próbuję mimo to"
             );
             candidates = entry.deployments.iter().collect();
         }
@@ -204,8 +206,9 @@ impl Router {
 
             if !self.rate_limiter.try_acquire(&deployment.provider) {
                 // Nie pomijamy wysyłki — to tylko księgowanie kubełka. Trafiamy
-                // tu głównie w ścieżce "wszystkie bez limitu, próbuję mimo to"
-                // (patrz wyżej) albo przy wyścigu z równoległym żądaniem.
+                // tu, gdy deployment bez wolnego limitu jest ostatnią deską
+                // ratunku (patrz kolejność kandydatów wyżej) albo przy wyścigu
+                // z równoległym żądaniem.
                 tracing::warn!(
                     request_id,
                     alias,
