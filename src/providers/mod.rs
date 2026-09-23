@@ -1,9 +1,3 @@
-//! Budowa żądania HTTP do dowolnego z czterech backendów.
-//!
-//! Wszystkie cztery (OpenRouter, Novita.ai, Infron.ai, NVIDIA NIM) są OpenAI-wire-compatible
-//! i autoryzują się nagłówkiem `Authorization: Bearer <klucz>`, więc różnią się wyłącznie
-//! `base_url` + `chat_path` (z `config.yaml`) oraz nazwą modelu.
-
 use std::time::Duration;
 
 use reqwest::RequestBuilder;
@@ -11,7 +5,6 @@ use serde_json::Value;
 
 use crate::config::{Deployment, ProviderConfig};
 
-/// Zwraca klucz API deploymentu ze środowiska (pusty string traktujemy jak brak).
 pub fn api_key_for(deployment: &Deployment) -> Option<String> {
     std::env::var(&deployment.api_key_env)
         .ok()
@@ -19,11 +12,6 @@ pub fn api_key_for(deployment: &Deployment) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Składa `reqwest::RequestBuilder` gotowy do wysłania.
-///
-/// `timeout` ustawiamy WYŁĄCZNIE dla żądań non-stream — timeout request-level w reqwest
-/// obejmuje całe body, więc dla streamu ucinałby połączenie w trakcie odpowiedzi.
-/// Dla streamu timeout bezczynności jest pilnowany osobno, per-event.
 pub fn build_request(
     client: &reqwest::Client,
     provider: &ProviderConfig,

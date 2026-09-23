@@ -1,10 +1,3 @@
-//! `POST /v1/chat/completions` — czysty passthrough w formacie OpenAI.
-//!
-//! Gateway czyta z ciała żądania wyłącznie `model` (wybór aliasu) i `stream`;
-//! resztę przekazuje providerowi 1:1. Odpowiedź non-stream wraca jako te same bajty,
-//! a stream jest bajtowym proxy SSE — bez parsowania i bez typowanych structów,
-//! ale z timeoutem bezczynności (`stream_idle_timeout_seconds`).
-
 use std::convert::Infallible;
 use std::fmt::Display;
 use std::time::Duration;
@@ -96,10 +89,6 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Result<Respon
         .into_response())
 }
 
-/// Przepuszcza bajty streamu providera bez zmian, ale gdy provider zamilknie
-/// na dłużej niż `idle_timeout` albo połączenie się zerwie, kończy strumień
-/// zdarzeniem `data: {"error": ...}` (BEZ `[DONE]`) — SDK OpenAI zgłasza wtedy
-/// błąd, zamiast uznać uciętą odpowiedź za kompletną.
 pub(crate) fn idle_guarded<S, E>(
     upstream: S,
     idle_timeout: Duration,
@@ -111,8 +100,6 @@ where
 {
     async_stream::stream! {
         let mut upstream = Box::pin(upstream);
-        // Czy ostatni przekazany bajt kończył zdarzenie SSE — jeśli nie,
-        // domykamy je przed doklejeniem zdarzenia błędu.
         let mut at_boundary = true;
 
         let failure = loop {

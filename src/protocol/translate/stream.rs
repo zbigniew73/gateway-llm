@@ -1,20 +1,3 @@
-//! Maszyna stanów tłumacząca strumień SSE OpenAI na strumień SSE Anthropic.
-//!
-//! Docelowa sekwencja Anthropic:
-//!
-//! ```text
-//! message_start
-//!   content_block_start  → N × content_block_delta → content_block_stop   (na blok)
-//! message_delta (stop_reason + usage.output_tokens [+ usage.input_tokens])
-//! message_stop
-//! ```
-//!
-//! Pułapka, dla której w ogóle istnieje ta struktura: OpenAI numeruje
-//! `delta.tool_calls[].index` TYLKO w obrębie wywołań narzędzi (0, 1, 2…),
-//! a Anthropic numeruje `content_block.index` po WSZYSTKICH blokach (tekst i tool_use
-//! we wspólnej przestrzeni). Trzymamy więc jawne mapowanie
-//! `openai_tool_index -> anthropic_block_index`.
-
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
@@ -23,7 +6,6 @@ use crate::protocol::anthropic::new_message_id;
 use crate::protocol::openai::{reasoning_str, ChatCompletionChunk, OpenAiToolCall};
 use crate::protocol::translate::{map_stop_reason, matched_stop_sequence};
 
-/// Pojedyncze zdarzenie SSE w formacie Anthropic (`event:` + `data:`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SseEvent {
     pub event: String,
@@ -38,10 +20,6 @@ impl SseEvent {
         }
     }
 
-    /// Zdarzenie `error` w formacie Anthropic — używane, gdy strumień providera
-    /// urywa się przed naturalnym zakończeniem (timeout bezczynności, zerwane
-    /// połączenie), więc klient nie może dostać fałszywego `message_stop`
-    /// sugerującego, że odpowiedź jest kompletna.
     pub fn error(message: impl Into<String>) -> Self {
         Self::new(
             "error",
@@ -77,9 +55,7 @@ struct ToolBuffer {
     id: String,
     #[allow(dead_code)]
     name: String,
-    /// Skonkatenowane fragmenty `arguments` — wyłącznie do diagnostyki/testów.
     arguments: String,
-    /// Czy blok został już zamknięty (`content_block_stop`).
     closed: bool,
 }
 
@@ -91,19 +67,14 @@ pub struct StreamState {
     finished: bool,
     next_block_index: u32,
     current_block: Option<CurrentBlock>,
-    /// Klucz: `index` wywołania narzędzia po stronie OpenAI.
     tool_buffers: HashMap<u32, ToolBuffer>,
-    /// Dla providerów, które nie wysyłają `index` — mapowanie po `id`.
     tool_index_by_id: HashMap<String, u32>,
     next_synthetic_tool_index: u32,
     finish_reason: Option<String>,
     input_tokens: Option<u32>,
     output_tokens: Option<u32>,
-    /// Czy klient włączył thinking — tylko wtedy rozumowanie idzie jako bloki `thinking`.
     thinking_enabled: bool,
-    /// Sekwencje stopu z żądania klienta.
     stop_sequences: Vec<String>,
-    /// Sekwencja stopu, którą provider wskazał jako przyczynę zatrzymania.
     stop_sequence: Option<String>,
 }
 
@@ -138,27 +109,22 @@ impl StreamState {
         self
     }
 
-    /// Identyfikator wiadomości zgłaszany klientowi.
     pub fn message_id(&self) -> &str {
         &self.message_id
     }
 
-    /// Skonkatenowane `arguments` danego wywołania narzędzia (indeks OpenAI).
-    /// Przydatne w testach: zlepek fragmentów musi parsować się do poprawnego JSON-a.
     pub fn tool_arguments(&self, openai_tool_index: u32) -> Option<&str> {
         self.tool_buffers
             .get(&openai_tool_index)
             .map(|buffer| buffer.arguments.as_str())
     }
 
-    /// Indeks bloku Anthropic przypisany danemu wywołaniu narzędzia OpenAI.
     pub fn anthropic_index_for_tool(&self, openai_tool_index: u32) -> Option<u32> {
         self.tool_buffers
             .get(&openai_tool_index)
             .map(|buffer| buffer.anthropic_index)
     }
 
-    /// Przetwarza jeden chunk OpenAI i zwraca zdarzenia do wysłania klientowi.
     pub fn handle_chunk(&mut self, chunk: &ChatCompletionChunk) -> Vec<SseEvent> {
         let mut events = Vec::new();
         if self.finished {
@@ -218,8 +184,6 @@ impl StreamState {
 
             if let Some(reason) = choice.finish_reason.as_ref().filter(|r| !r.is_empty()) {
                 self.finish_reason = Some(reason.clone());
-                // Chunk z usage (OpenRouter) powtarza finish_reason bez
-                // stop_reason — nie wolno nim wymazać już znalezionej sekwencji.
                 if let Some(matched) = matched_stop_sequence(
                     Some(reason),
                     choice.stop_reason.as_ref(),
@@ -233,8 +197,6 @@ impl StreamState {
         events
     }
 
-    /// Domyka strumień: zamyka otwarty blok, wysyła `message_delta` i `message_stop`.
-    /// Wywołanie wielokrotne jest bezpieczne (kolejne zwracają pustą listę).
     pub fn finish(&mut self) -> Vec<SseEvent> {
         let mut events = Vec::new();
         if self.finished {
@@ -254,9 +216,6 @@ impl StreamState {
             (map_stop_reason(self.finish_reason.as_deref()), None)
         };
 
-        // OpenAI podaje usage dopiero na końcu streamu, więc `input_tokens`
-        // z `message_start` to zawsze placeholder 0 — prawdziwą wartość
-        // przekazujemy tutaj (tylko gdy ją znamy, żeby nie nadpisać zerem).
         let mut usage = json!({ "output_tokens": self.output_tokens.unwrap_or(0) });
         if let Some(input_tokens) = self.input_tokens {
             usage["input_tokens"] = json!(input_tokens);
@@ -278,10 +237,6 @@ impl StreamState {
         events
     }
 
-    /// Przerywa strumień po błędzie transportu/timeoucie: domyka ewentualny
-    /// otwarty blok, ale — inaczej niż [`finish`](Self::finish) — NIE wysyła
-    /// `message_delta`/`message_stop`. Wywołujący dokleja po tym zdarzenie
-    /// `error` ([`SseEvent::error`]). Wywołanie wielokrotne jest bezpieczne.
     pub fn abort(&mut self) -> Vec<SseEvent> {
         let mut events = Vec::new();
         if self.finished {
@@ -294,10 +249,6 @@ impl StreamState {
 
         events
     }
-
-    // -----------------------------------------------------------------------
-    // Wewnętrzne
-    // -----------------------------------------------------------------------
 
     fn ensure_message_start(&mut self, events: &mut Vec<SseEvent>) {
         if self.sent_message_start {
@@ -316,8 +267,6 @@ impl StreamState {
                     "content": [],
                     "stop_reason": Value::Null,
                     "stop_sequence": Value::Null,
-                    // OpenAI zwykle nie podaje liczby tokenów promptu na starcie —
-                    // wstawiamy placeholder i korygujemy w `message_delta`, jeśli się da.
                     "usage": {
                         "input_tokens": self.input_tokens.unwrap_or(0),
                         "output_tokens": 0
@@ -342,7 +291,6 @@ impl StreamState {
             json!({
                 "type": "content_block_start",
                 "index": index,
-                // Podpisu (`signature`) nie mamy — to nie jest rozumowanie Claude'a.
                 "content_block": { "type": "thinking", "thinking": "", "signature": "" }
             }),
         ));
@@ -436,7 +384,6 @@ impl StreamState {
             ));
         }
 
-        // Uzupełnij nazwę, jeśli dotarła dopiero w kolejnym fragmencie.
         if let Some(name) = tool_call
             .function
             .as_ref()
@@ -467,9 +414,6 @@ impl StreamState {
         let closed = buffer.closed;
 
         if closed {
-            // Provider wrócił do narzędzia, którego blok już zamknęliśmy. Protokół
-            // Anthropic nie pozwala go ponownie otworzyć; fragment trafia wyłącznie
-            // do bufora (patrz `tool_arguments`).
             tracing::warn!(
                 openai_tool_index,
                 "fragment 'arguments' dla już zamkniętego bloku tool_use — pomijam w SSE"
@@ -487,8 +431,6 @@ impl StreamState {
         ));
     }
 
-    /// Ustala indeks wywołania narzędzia. Część providerów pomija `index`,
-    /// więc dla takich przypadków numerujemy po `id`.
     fn resolve_tool_index(&mut self, tool_call: &OpenAiToolCall) -> u32 {
         if let Some(index) = tool_call.index {
             return index;

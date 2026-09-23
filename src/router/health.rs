@@ -1,6 +1,3 @@
-//! Śledzenie "zdrowia" deploymentów: po serii błędów w oknie czasowym deployment
-//! trafia na chwilę do cooldownu i jest pomijany przy wyborze kolejnego kandydata.
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -9,9 +6,7 @@ use crate::config::RoutingConfig;
 
 #[derive(Debug, Default)]
 struct DeploymentHealth {
-    /// Momenty ostatnich błędów (tylko te wewnątrz okna).
     failures: Vec<Instant>,
-    /// Do kiedy deployment jest w cooldownie.
     cooldown_until: Option<Instant>,
 }
 
@@ -33,13 +28,10 @@ impl HealthTracker {
         }
     }
 
-    /// `false` tylko wtedy, gdy deployment jest aktualnie w cooldownie.
     pub fn is_available(&self, key: &str) -> bool {
         let now = Instant::now();
         let mut guard = match self.inner.lock() {
             Ok(guard) => guard,
-            // Zatruty mutex nie może wyłączyć routingu — w najgorszym razie
-            // stracimy informację o cooldownie.
             Err(poisoned) => poisoned.into_inner(),
         };
         match guard.get_mut(key) {
@@ -67,7 +59,6 @@ impl HealthTracker {
         }
     }
 
-    /// Zapisuje błąd; zwraca `true`, jeżeli właśnie wszedł cooldown.
     pub fn record_failure(&self, key: &str) -> bool {
         let now = Instant::now();
         let window = self.error_window;
@@ -92,7 +83,6 @@ impl HealthTracker {
         }
     }
 
-    /// Ile sekund cooldownu pozostało (0 = brak).
     pub fn cooldown_remaining_secs(&self, key: &str) -> u64 {
         let now = Instant::now();
         let guard = match self.inner.lock() {

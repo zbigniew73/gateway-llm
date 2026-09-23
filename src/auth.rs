@@ -1,12 +1,3 @@
-//! Middleware autoryzacji gatewaya.
-//!
-//! Akceptuje klucz w DWÓCH nagłówkach, bo klienci obu ekosystemów wysyłają go inaczej:
-//!
-//! * `x-api-key: <klucz>` — Claude Code i pozostali klienci Anthropic,
-//! * `Authorization: Bearer <klucz>` — klienci OpenAI-SDK (pi.dev itp.).
-//!
-//! Middleware jest montowany wyłącznie na `/v1/*`; `/healthz` pozostaje otwarty.
-
 use axum::extract::{Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::middleware::Next;
@@ -15,7 +6,6 @@ use axum::response::Response;
 use crate::error::{AppError, ErrorStyle};
 use crate::state::AppState;
 
-/// Nagłówek używany przez klientów Anthropic.
 const X_API_KEY: &str = "x-api-key";
 
 pub async fn require_api_key(
@@ -84,7 +74,6 @@ fn strip_bearer(value: &str) -> Option<&str> {
     }
 }
 
-/// Porównanie w czasie niezależnym od pozycji pierwszej różnicy.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;

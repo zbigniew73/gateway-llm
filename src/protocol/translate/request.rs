@@ -1,11 +1,3 @@
-//! `MessagesRequest` (Anthropic) → `ChatCompletionRequest` (OpenAI).
-//!
-//! Najważniejsza różnica strukturalna: Anthropic pakuje wyniki narzędzi jako bloki
-//! `tool_result` wewnątrz wiadomości `user`, a OpenAI wymaga osobnej wiadomości
-//! `role: "tool"` dla każdego `tool_call_id`. Dlatego z jednej wiadomości `user`
-//! może powstać kilka wiadomości OpenAI: najpierw wszystkie `tool`, potem
-//! towarzyszący tekst jako `user`.
-
 use serde_json::{json, Value};
 
 use crate::error::AppError;
@@ -46,7 +38,6 @@ pub fn anthropic_to_openai_request(
                     messages.push(assistant);
                 }
             }
-            // Wszystko inne (w praktyce "user") traktujemy jak wiadomość użytkownika.
             _ => {
                 let (tool_messages, user_message) = build_user_messages(&blocks);
                 messages.extend(tool_messages);
@@ -80,7 +71,6 @@ pub fn anthropic_to_openai_request(
             .collect::<Vec<_>>()
     });
 
-    // tool_choice ma sens tylko razem z listą narzędzi.
     let tool_choice = match (&tools, &request.tool_choice) {
         (Some(tools), Some(choice)) if !tools.is_empty() => map_tool_choice(choice),
         _ => None,
@@ -115,8 +105,6 @@ fn map_tool_choice(choice: &AnthropicToolChoice) -> Option<Value> {
     }
 }
 
-/// Z bloków wiadomości `assistant` robi jedną wiadomość OpenAI
-/// (tekst + ewentualne `tool_calls`).
 fn build_assistant_message(blocks: &[AnthropicContentBlock]) -> Option<ChatMessage> {
     let mut text = String::new();
     let mut tool_calls: Vec<OpenAiToolCall> = Vec::new();
@@ -161,8 +149,6 @@ fn build_assistant_message(blocks: &[AnthropicContentBlock]) -> Option<ChatMessa
     })
 }
 
-/// Z bloków wiadomości `user` robi listę wiadomości `role:"tool"` (po jednej na
-/// `tool_result`) oraz co najwyżej jedną wiadomość `role:"user"` z resztą treści.
 fn build_user_messages(
     blocks: &[AnthropicContentBlock],
 ) -> (Vec<ChatMessage>, Option<ChatMessage>) {
@@ -238,7 +224,6 @@ fn build_user_messages(
     (tool_messages, user_message)
 }
 
-/// Anthropic `image.source` → OpenAI `image_url.url` (data-URI dla base64).
 fn image_source_to_url(source: &ImageSource) -> Option<String> {
     match source.kind.as_str() {
         "base64" => {

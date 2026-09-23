@@ -1,9 +1,3 @@
-//! `POST /v1/messages` — Anthropic Messages API z pełną translacją do/z formatu OpenAI.
-//!
-//! Non-stream: request → OpenAI → provider → OpenAI response → Anthropic response.
-//! Stream: SSE providera jest parsowane (`eventsource-stream`) i przepuszczane przez
-//! [`StreamState`], która emituje zdarzenia w formacie Anthropic.
-
 use std::convert::Infallible;
 
 use axum::body::Bytes;
@@ -23,11 +17,8 @@ use crate::protocol::translate::response::openai_to_anthropic_response;
 use crate::protocol::translate::stream::{SseEvent, StreamState};
 use crate::state::AppState;
 
-/// Jak zakończyło się czytanie strumienia providera.
 enum StreamOutcome {
-    /// `[DONE]` albo naturalny koniec strumienia HTTP.
     Completed,
-    /// Timeout bezczynności albo błąd odczytu — odpowiedź jest ucięta.
     Aborted(String),
 }
 
@@ -83,10 +74,6 @@ pub async fn handle(
         return Ok(Json(translated).into_response());
     }
 
-    // --- streaming -------------------------------------------------------
-    // Decyzja o fallbacku zapadła już w `dispatch()`; od tego momentu tylko
-    // tłumaczymy strumień. Timeout bezczynności pilnujemy per-event, bo
-    // request-level timeout reqwest obejmowałby całą (długą) odpowiedź.
     let idle_timeout = state.config.stream_idle_timeout();
     let request_id_for_stream = request_id.clone();
 
@@ -96,9 +83,6 @@ pub async fn handle(
             .with_thinking(thinking_enabled)
             .with_stop_sequences(stop_sequences);
 
-        // Rozróżniamy zakończenie naturalne (`[DONE]` / koniec strumienia) od
-        // przerwania błędem — inaczej klient dostałby fałszywy `message_stop`
-        // sugerujący kompletną odpowiedź, mimo że została ucięta.
         let outcome = loop {
             let next = tokio::time::timeout(idle_timeout, event_source.next()).await;
 
@@ -176,8 +160,6 @@ pub async fn handle(
     Ok(Sse::new(events).into_response())
 }
 
-/// `POST /v1/messages/count_tokens` — PRZYBLIŻONA liczba tokenów wejścia
-/// (backendy OpenAI-wire nie mają endpointu do liczenia tokenów).
 pub async fn count_tokens(body: Bytes) -> Result<Response, AnthropicError> {
     let request: MessagesRequest = serde_json::from_slice(&body).map_err(|err| {
         AppError::bad_request(format!(
@@ -191,7 +173,6 @@ pub async fn count_tokens(body: Bytes) -> Result<Response, AnthropicError> {
     )
 }
 
-/// Zamienia zdarzenie z `StreamState` na `axum` SSE (`event:` + `data:`).
 fn to_sse(event: &SseEvent) -> Option<Event> {
     match Event::default().event(&event.event).json_data(&event.data) {
         Ok(sse) => Some(sse),

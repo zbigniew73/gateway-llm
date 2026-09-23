@@ -1,14 +1,10 @@
-//! Wczytanie i walidacja `config.yaml`.
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-/// Domyślna nazwa pliku konfiguracyjnego (względem katalogu roboczego).
 pub const DEFAULT_CONFIG_FILE: &str = "config.yaml";
 
-/// Zmienna środowiskowa nadpisująca ścieżkę do konfiguracji.
 pub const CONFIG_PATH_ENV: &str = "GATEWAY_CONFIG";
 
 #[derive(Debug, thiserror::Error)]
@@ -60,28 +56,16 @@ impl Default for ServerConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoutingConfig {
-    /// Szybkie wykrycie martwego providera (sekundy): limit na nawiązanie
-    /// połączenia TCP/TLS (każde żądanie), a dla streamu także na nagłówki
-    /// odpowiedzi, zanim zacznie działać `stream_idle_timeout_seconds`.
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout_seconds: u64,
-    /// Ile najdłużej może trwać CISZA między kolejnymi zdarzeniami SSE w już
-    /// trwającym streamie, zanim uznamy providera za martwego (sekundy).
-    /// Nie dotyczy żądań non-stream.
     #[serde(default = "default_stream_idle_timeout")]
     pub stream_idle_timeout_seconds: u64,
-    /// Pełny limit czasu żądania non-stream (sekundy). Musi być hojny: przy
-    /// non-stream provider zwykle odpowiada dopiero po wygenerowaniu CAŁEJ
-    /// odpowiedzi, więc krótki limit ucinałby poprawne, długie generacje.
     #[serde(default = "default_non_stream_timeout")]
     pub non_stream_timeout_seconds: u64,
-    /// Liczba błędów w oknie, po której deployment trafia do cooldownu.
     #[serde(default = "default_error_threshold")]
     pub error_threshold: u32,
-    /// Długość okna zliczania błędów (sekundy).
     #[serde(default = "default_error_window")]
     pub error_window_seconds: u64,
-    /// Jak długo deployment jest pomijany po przekroczeniu progu (sekundy).
     #[serde(default = "default_cooldown")]
     pub cooldown_seconds: u64,
 }
@@ -103,23 +87,13 @@ impl Default for RoutingConfig {
 pub struct ProviderConfig {
     pub base_url: String,
     pub chat_path: String,
-    /// Limit żądań na minutę wychodzących z TEGO gatewaya do tego providera
-    /// (token bucket w `Router`). `None` = bez limitu. To limit CAŁEGO konta
-    /// providera, dzielony przez wszystkie deploymenty, które go używają —
-    /// nie widzi ruchu spoza gatewaya (np. tego samego klucza użytego gdzie
-    /// indziej równolegle).
     #[serde(default)]
     pub rpm: Option<u32>,
-    /// Czy dla streamu na ścieżce `/v1/messages` prosić providera o usage
-    /// (`stream_options.include_usage`) — bez tego Claude Code nie zna
-    /// liczby tokenów. Domyślnie wyłączone: provider, który nie obsługuje
-    /// tego parametru, mógłby odrzucić żądanie (400).
     #[serde(default)]
     pub stream_usage: bool,
 }
 
 impl ProviderConfig {
-    /// Pełny URL endpointu chat completions danego providera.
     pub fn chat_url(&self) -> String {
         format!(
             "{}/{}",
@@ -134,36 +108,26 @@ pub struct ModelEntry {
     pub model_name: String,
     #[serde(default)]
     pub deployments: Vec<Deployment>,
-    /// Inny `model_name`, na który router przechodzi, gdy WSZYSTKIE
-    /// `deployments` tego aliasu zawiodą (a nie tylko pojedynczy deployment —
-    /// to już obsługuje kolejność `order` w `deployments`).
     #[serde(default)]
     pub fallback_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Deployment {
-    /// Klucz w mapie `providers`.
     pub provider: String,
-    /// Nazwa modelu tak, jak oczekuje jej provider.
     pub model: String,
-    /// Nazwa zmiennej środowiskowej z kluczem API providera.
     pub api_key_env: String,
-    /// Kolejność prób (rosnąco). Brak = 0.
     #[serde(default)]
     pub order: i64,
 }
 
 impl Deployment {
-    /// Stabilny klucz deploymentu używany przez tracker zdrowia.
     pub fn health_key(&self) -> String {
         format!("{}|{}", self.provider, self.model)
     }
 }
 
 impl Config {
-    /// Ustala ścieżkę configu: `$GATEWAY_CONFIG`, potem `./config.yaml`,
-    /// a na końcu `config.yaml` obok binarki (przydatne przy uruchomieniu spoza repo).
     pub fn resolve_path() -> PathBuf {
         if let Ok(explicit) = std::env::var(CONFIG_PATH_ENV) {
             if !explicit.trim().is_empty() {
@@ -208,8 +172,6 @@ impl Config {
         Ok(config)
     }
 
-    /// Waliduje spójność configu. Brakujące klucze API to tylko ostrzeżenie —
-    /// provider może być celowo nieużywany na tej maszynie.
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.providers.is_empty() {
             return Err(ConfigError::Invalid(
@@ -312,8 +274,6 @@ impl Config {
             }
         }
 
-        // Cykle w łańcuchu fallback_model (A -> B -> A) wywróciłyby routing
-        // w nieskończoną pętlę — wyłapujemy je już przy starcie.
         for entry in &self.model_list {
             let mut chain: HashSet<&str> = HashSet::new();
             chain.insert(entry.model_name.as_str());
@@ -335,7 +295,6 @@ impl Config {
         Ok(())
     }
 
-    /// Loguje ostrzeżenia o brakujących w środowisku kluczach API (nie jest to błąd).
     pub fn warn_about_missing_api_keys(&self) {
         let mut missing: Vec<&str> = Vec::new();
         for entry in &self.model_list {
@@ -356,12 +315,10 @@ impl Config {
         }
     }
 
-    /// Zwraca wpis `model_list` dla danego aliasu.
     pub fn model_entry(&self, alias: &str) -> Option<&ModelEntry> {
         self.model_list.iter().find(|m| m.model_name == alias)
     }
 
-    /// Zwraca konfigurację providera po nazwie.
     pub fn provider(&self, name: &str) -> Option<&ProviderConfig> {
         self.providers.get(name)
     }

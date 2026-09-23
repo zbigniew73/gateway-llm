@@ -1,5 +1,3 @@
-//! Timeouty routera na prawdziwym (lokalnym, celowo wolnym) serwerze HTTP.
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,8 +10,6 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-/// Serwer, który odsyła poprawną odpowiedź chat completions dopiero po `delay`
-/// — tak jak provider non-stream, który odpowiada po wygenerowaniu całości.
 async fn slow_server(delay: Duration) -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -72,8 +68,6 @@ fn body() -> serde_json::Value {
 
 #[tokio::test]
 async fn slow_non_stream_response_is_not_cut_by_connect_timeout() {
-    // Odpowiedź po 2 s przy connect_timeout = 1 s: przed poprawką connect_timeout
-    // był pełnym timeoutem non-stream i to żądanie zostałoby ucięte.
     let env = "GW_TEST_KEY_SLOW_OK";
     std::env::set_var(env, "k");
     let port = slow_server(Duration::from_secs(2)).await;

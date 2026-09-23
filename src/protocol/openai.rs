@@ -1,14 +1,5 @@
-//! Typy OpenAI Chat Completions — format pośredni translacji dla `/v1/messages`.
-//!
-//! Wszystkie pola odpowiedzi są maksymalnie tolerancyjne (`Option` + `#[serde(default)]`),
-//! bo cztery różne backendy potrafią pomijać albo dokładać pola.
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-// ---------------------------------------------------------------------------
-// Request
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionRequest {
@@ -41,17 +32,12 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<OpenAiToolCall>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
-    /// Rozszerzenie providerów (vLLM/NIM, DeepSeek, Qwen, GLM): tekst rozumowania.
-    /// `Value`, bo część providerów wysyła tu nie-string — nie może to wywrócić
-    /// parsowania całej odpowiedzi.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<Value>,
-    /// Rozszerzenie OpenRouter: tekst rozumowania.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<Value>,
 }
 
-/// Tekst rozumowania z `reasoning_content` albo `reasoning` (pierwszy niepusty string).
 pub fn reasoning_str<'a>(
     reasoning_content: &'a Option<Value>,
     reasoning: &'a Option<Value>,
@@ -72,7 +58,6 @@ impl ChatMessage {
         }
     }
 
-    /// Zwraca treść tekstową wiadomości (łączy części typu `text`).
     pub fn text_content(&self) -> String {
         match &self.content {
             Some(OpenAiContent::Text(text)) => text.clone(),
@@ -123,12 +108,6 @@ pub struct OpenAiFunctionDef {
     pub parameters: Value,
 }
 
-// ---------------------------------------------------------------------------
-// Tool calls (wspólne dla odpowiedzi i chunków streamingu)
-// ---------------------------------------------------------------------------
-
-/// W streamingu wszystkie pola poza `index` przychodzą fragmentarycznie,
-/// dlatego każde jest opcjonalne.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpenAiToolCall {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,14 +124,9 @@ pub struct OpenAiToolCall {
 pub struct OpenAiFunctionCall {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Argumenty jako STRING z JSON-em (w streamie doklejane fragmentami).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Response (non-stream)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ChatCompletionResponse {
@@ -174,7 +148,6 @@ pub struct ChatChoice {
     pub message: ChatMessage,
     #[serde(default)]
     pub finish_reason: Option<String>,
-    /// Rozszerzenie vLLM/NIM: trafiona sekwencja stopu (string) albo id tokenu.
     #[serde(default)]
     pub stop_reason: Option<Value>,
 }
@@ -188,10 +161,6 @@ pub struct OpenAiUsage {
     #[serde(default)]
     pub total_tokens: Option<u32>,
 }
-
-// ---------------------------------------------------------------------------
-// Response (streaming)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ChatCompletionChunk {
@@ -213,7 +182,6 @@ pub struct ChunkChoice {
     pub delta: ChunkDelta,
     #[serde(default)]
     pub finish_reason: Option<String>,
-    /// Rozszerzenie vLLM/NIM: trafiona sekwencja stopu (string) albo id tokenu.
     #[serde(default)]
     pub stop_reason: Option<Value>,
 }

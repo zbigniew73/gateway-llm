@@ -1,14 +1,5 @@
-//! Typy Anthropic Messages API (`/v1/messages`).
-//!
-//! Nieznane typy bloków treści (np. `redacted_thinking`, dokumenty, przyszłe rozszerzenia)
-//! lądują w wariancie `Unknown` zamiast wywracać deserializację całego żądania.
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-// ---------------------------------------------------------------------------
-// Request
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessagesRequest {
@@ -31,14 +22,11 @@ pub struct MessagesRequest {
     pub tools: Option<Vec<AnthropicTool>>,
     #[serde(default)]
     pub tool_choice: Option<AnthropicToolChoice>,
-    /// Konfiguracja extended thinking klienta (`{"type": "enabled", ...}`).
     #[serde(default)]
     pub thinking: Option<Value>,
 }
 
 impl MessagesRequest {
-    /// Czy klient chce bloków `thinking` w odpowiedzi. Tak jak w API Anthropic:
-    /// bez włączonego thinking rozumowanie modelu nie jest pokazywane.
     pub fn thinking_enabled(&self) -> bool {
         self.thinking
             .as_ref()
@@ -82,7 +70,6 @@ pub enum AnthropicContent {
 }
 
 impl AnthropicContent {
-    /// Normalizuje treść do listy bloków.
     pub fn blocks(&self) -> Vec<AnthropicContentBlock> {
         match self {
             AnthropicContent::Text(text) => {
@@ -116,15 +103,12 @@ pub enum AnthropicContentBlock {
         #[serde(default)]
         is_error: Option<bool>,
     },
-    /// Rozumowanie modelu. W odpowiedzi tworzone z `reasoning_content`/`reasoning`
-    /// providera; w żądaniu (echo poprzednich tur) ignorowane w translacji.
     Thinking {
         #[serde(default)]
         thinking: String,
         #[serde(default)]
         signature: String,
     },
-    /// Wszystko, czego nie rozpoznajemy (np. `redacted_thinking`) — ignorowane w translacji.
     #[serde(other)]
     Unknown,
 }
@@ -179,10 +163,6 @@ pub enum AnthropicToolChoice {
     Unknown,
 }
 
-// ---------------------------------------------------------------------------
-// Response (non-stream)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize)]
 pub struct MessagesResponse {
     pub id: String,
@@ -202,23 +182,11 @@ pub struct AnthropicUsage {
     pub output_tokens: u32,
 }
 
-// ---------------------------------------------------------------------------
-// Szacowanie tokenów (`/v1/messages/count_tokens`)
-// ---------------------------------------------------------------------------
-
-/// ~4 bajty UTF-8 na token. Bajty zamiast znaków celowo lekko zawyżają wynik
-/// dla tekstu nie-ASCII (np. polskiego) — dla auto-kompaktowania w Claude Code
-/// bezpieczniej przeszacować niż niedoszacować.
 const BYTES_PER_TOKEN: usize = 4;
-/// Obraz liczony ryczałtem — długość base64 nie ma związku z liczbą tokenów.
 const IMAGE_TOKENS: usize = 1600;
-/// Narzut formatu na każdą wiadomość (rola, separatory).
 const MESSAGE_OVERHEAD_TOKENS: usize = 4;
 
 impl MessagesRequest {
-    /// PRZYBLIŻONA liczba tokenów wejścia. Backendy OpenAI-wire nie mają
-    /// endpointu do liczenia tokenów, więc szacujemy lokalnie. Bloki, których
-    /// nie rozpoznajemy (np. `thinking`, dokumenty), nie są liczone.
     pub fn estimate_input_tokens(&self) -> u32 {
         let mut bytes = 0usize;
         let mut tokens = 0usize;
@@ -264,14 +232,11 @@ fn count_blocks(blocks: &[AnthropicContentBlock], bytes: &mut usize, tokens: &mu
                 Some(ToolResultContent::Blocks(nested)) => count_blocks(nested, bytes, tokens),
                 None => {}
             },
-            // Rozumowanie z poprzednich tur nie trafia do providera (translacja je
-            // pomija), więc nie zajmuje kontekstu.
             AnthropicContentBlock::Thinking { .. } | AnthropicContentBlock::Unknown => {}
         }
     }
 }
 
-/// Skleja tekst ze wszystkich bloków typu `text`.
 pub fn join_text_blocks(blocks: &[AnthropicContentBlock]) -> String {
     blocks
         .iter()
@@ -283,7 +248,6 @@ pub fn join_text_blocks(blocks: &[AnthropicContentBlock]) -> String {
         .join("\n")
 }
 
-/// Generuje identyfikator wiadomości w konwencji Anthropic.
 pub fn new_message_id() -> String {
     format!("msg_{}", uuid::Uuid::new_v4().simple())
 }
@@ -299,7 +263,6 @@ mod tests {
 
     #[test]
     fn text_is_estimated_at_four_bytes_per_token() {
-        // 400 bajtów tekstu = 100 tokenów + 4 narzutu na wiadomość.
         let req = request(json!({
             "model": "m",
             "messages": [{ "role": "user", "content": "a".repeat(400) }]
@@ -353,7 +316,6 @@ mod tests {
                 ]}
             ]
         }));
-        // tool_use: nazwa + JSON inputu (> 400 bajtów), tool_result: 800 bajtów.
         assert!(req.estimate_input_tokens() >= 300);
     }
 }

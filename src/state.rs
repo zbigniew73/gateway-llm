@@ -1,5 +1,3 @@
-//! Stan współdzielony przez handlery axum.
-
 use std::sync::Arc;
 
 use crate::config::Config;
@@ -9,7 +7,6 @@ use crate::router::Router;
 pub struct AppState {
     pub config: Arc<Config>,
     pub router: Arc<Router>,
-    /// Klucz, którym klienci autoryzują się do gatewaya (`GATEWAY_API_KEY`).
     pub gateway_api_key: Arc<String>,
 }
 

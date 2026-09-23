@@ -1,5 +1,3 @@
-//! Bootstrap binarki gateway-llm.
-
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,8 +9,6 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    // `.env` obok binarki/w katalogu roboczym jest opcjonalny — systemd podaje
-    // zmienne przez EnvironmentFile.
     let _ = dotenvy::dotenv();
 
     init_tracing();

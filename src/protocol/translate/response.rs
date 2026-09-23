@@ -1,5 +1,3 @@
-//! `ChatCompletionResponse` (OpenAI) → `MessagesResponse` (Anthropic), non-stream.
-
 use serde_json::Value;
 
 use crate::protocol::anthropic::{
@@ -8,9 +6,6 @@ use crate::protocol::anthropic::{
 use crate::protocol::openai::{reasoning_str, ChatCompletionResponse};
 use crate::protocol::translate::{map_stop_reason, matched_stop_sequence};
 
-/// `thinking_enabled`: czy klient włączył thinking (tylko wtedy rozumowanie
-/// providera trafia do odpowiedzi jako blok `thinking`).
-/// `stop_sequences`: sekwencje stopu z żądania klienta.
 pub fn openai_to_anthropic_response(
     response: &ChatCompletionResponse,
     model_alias: &str,
@@ -64,8 +59,6 @@ pub fn openai_to_anthropic_response(
         }
     }
 
-    // Anthropic wymaga odpowiedzi z tekstem albo narzędziem (sam blok thinking
-    // to za mało).
     let has_answer = content.iter().any(|block| {
         matches!(
             block,
@@ -112,8 +105,6 @@ pub fn openai_to_anthropic_response(
     }
 }
 
-/// `arguments` przychodzi jako string z JSON-em; gdy jest pusty albo uszkodzony,
-/// nie wywracamy odpowiedzi — zwracamy pusty obiekt (albo opakowany surowy tekst).
 pub fn parse_arguments(arguments: &str) -> Value {
     let trimmed = arguments.trim();
     if trimmed.is_empty() {

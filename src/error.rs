@@ -1,13 +1,7 @@
-//! Typ błędu gatewaya + serializacja do kształtu JSON właściwego dla endpointu.
-//!
-//! `/v1/chat/completions` → styl OpenAI: `{"error":{"message","type","param","code"}}`
-//! `/v1/messages`         → styl Anthropic: `{"type":"error","error":{"type","message"}}`
-
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
-/// Maksymalna długość treści błędu providera przenoszonej do klienta.
 const MAX_UPSTREAM_BODY: usize = 2000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +24,6 @@ pub enum AppError {
     #[error("brak dostępnego deploymentu dla modelu '{0}'")]
     NoDeploymentAvailable(String),
 
-    /// Provider odpowiedział kodem błędu.
     #[error("provider '{provider}' zwrócił HTTP {status}: {body}")]
     Upstream {
         provider: String,
@@ -38,7 +31,6 @@ pub enum AppError {
         body: String,
     },
 
-    /// Nie udało się w ogóle porozmawiać z providerem (DNS/TLS/timeout/…).
     #[error("nie udało się połączyć z providerem: {0}")]
     UpstreamTransport(String),
 
@@ -78,7 +70,6 @@ impl AppError {
         }
     }
 
-    /// Wartość pola `error.type` w stylu OpenAI.
     pub fn openai_type(&self) -> &'static str {
         match self {
             AppError::Unauthorized => "invalid_request_error",
@@ -91,7 +82,6 @@ impl AppError {
         }
     }
 
-    /// Wartość pola `error.type` w stylu Anthropic.
     pub fn anthropic_type(&self) -> &'static str {
         match self {
             AppError::Unauthorized => "authentication_error",
@@ -128,14 +118,12 @@ impl AppError {
     }
 }
 
-/// Domyślna (OpenAI-owa) serializacja — używana przez `/v1/chat/completions`.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         self.into_response_with(ErrorStyle::OpenAi)
     }
 }
 
-/// Opakowanie wymuszające serializację w stylu Anthropic — używane przez `/v1/messages`.
 #[derive(Debug)]
 pub struct AnthropicError(pub AppError);
 
@@ -151,7 +139,6 @@ impl IntoResponse for AnthropicError {
     }
 }
 
-/// Obcina tekst do `max` znaków (bez rozcinania znaku wielobajtowego).
 pub fn truncate(mut value: String, max: usize) -> String {
     if value.chars().count() <= max {
         return value;

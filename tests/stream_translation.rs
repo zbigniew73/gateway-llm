@@ -1,18 +1,6 @@
-//! Testy `StreamState` na syntetycznych sekwencjach chunków OpenAI (bez sieci).
-//!
-//! Sprawdzamy trzy scenariusze wskazane jako najbardziej ryzykowne:
-//! 1. zwykły strumień tekstowy,
-//! 2. `tool_use` — mapowanie `openai_tool_index -> anthropic_block_index`
-//!    oraz to, że skonkatenowany `partial_json` parsuje się do poprawnego JSON-a,
-//! 3. wiele bloków (tekst + dwa `tool_use`) w jednej odpowiedzi.
-
 use gateway_llm::protocol::openai::ChatCompletionChunk;
 use gateway_llm::protocol::translate::stream::{SseEvent, StreamState};
 use serde_json::{json, Value};
-
-// ---------------------------------------------------------------------------
-// Pomocnicze
-// ---------------------------------------------------------------------------
 
 fn chunk(value: Value) -> ChatCompletionChunk {
     serde_json::from_value(value).expect("syntetyczny chunk musi się deserializować")
@@ -90,7 +78,6 @@ fn field<'a>(event: &'a SseEvent, path: &[&str]) -> &'a Value {
     current
 }
 
-/// Skleja wszystkie `partial_json` dla danego indeksu bloku Anthropic.
 fn concatenated_partial_json(events: &[SseEvent], block_index: u64) -> String {
     events
         .iter()
@@ -105,10 +92,6 @@ fn concatenated_partial_json(events: &[SseEvent], block_index: u64) -> String {
         })
         .collect::<String>()
 }
-
-// ---------------------------------------------------------------------------
-// 1. Zwykły tekst
-// ---------------------------------------------------------------------------
 
 #[test]
 fn plain_text_stream_produces_canonical_anthropic_sequence() {
@@ -133,14 +116,12 @@ fn plain_text_stream_produces_canonical_anthropic_sequence() {
         ]
     );
 
-    // message_start zawiera id, model (alias!) i pustą listę bloków
     let start = &events[0];
     assert_eq!(field(start, &["type"]), "message_start");
     assert_eq!(field(start, &["message", "role"]), "assistant");
     assert_eq!(field(start, &["message", "model"]), "claude-sonnet-4");
     assert_eq!(field(start, &["message", "content"]), &json!([]));
 
-    // pojedynczy blok tekstowy o indeksie 0
     assert_eq!(field(&events[1], &["index"]), 0);
     assert_eq!(field(&events[1], &["content_block", "type"]), "text");
 
@@ -191,7 +172,6 @@ fn usage_from_final_chunk_is_reported() {
         .find(|event| event.event == "message_delta")
         .expect("message_delta musi wystąpić");
     assert_eq!(field(message_delta, &["usage", "output_tokens"]), 7);
-    // input_tokens znamy dopiero z końcowego chunka — musi trafić do message_delta.
     assert_eq!(field(message_delta, &["usage", "input_tokens"]), 11);
 }
 
@@ -207,10 +187,6 @@ fn input_tokens_are_omitted_when_provider_sent_no_usage() {
         "bez usage od providera nie wolno nadpisywać input_tokens zerem"
     );
 }
-
-// ---------------------------------------------------------------------------
-// 2. tool_use
-// ---------------------------------------------------------------------------
 
 #[test]
 fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
@@ -236,7 +212,6 @@ fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
         ]
     );
 
-    // Jedyny blok (tool_use) dostaje indeks Anthropic 0.
     let block_start = &events[1];
     assert_eq!(field(block_start, &["index"]), 0);
     assert_eq!(field(block_start, &["content_block", "type"]), "tool_use");
@@ -248,13 +223,11 @@ fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
     assert_eq!(field(block_start, &["content_block", "input"]), &json!({}));
     assert_eq!(state.anthropic_index_for_tool(0), Some(0));
 
-    // Wszystkie delty to input_json_delta pod tym samym indeksem.
     for event in events.iter().filter(|e| e.event == "content_block_delta") {
         assert_eq!(field(event, &["index"]), 0);
         assert_eq!(field(event, &["delta", "type"]), "input_json_delta");
     }
 
-    // Sklejone fragmenty muszą tworzyć poprawny JSON.
     let joined = concatenated_partial_json(&events, 0);
     assert_eq!(joined, r#"{"location":"San Francisco","unit":"celsius"}"#);
     let parsed: Value =
@@ -264,7 +237,6 @@ fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
         json!({"location": "San Francisco", "unit": "celsius"})
     );
 
-    // Bufor stanu widzi dokładnie to samo.
     assert_eq!(state.tool_arguments(0), Some(joined.as_str()));
 
     let message_delta = &events[6];
@@ -304,10 +276,6 @@ fn tool_call_without_index_is_tracked_by_id() {
     assert_eq!(concatenated_partial_json(&events, 0), "{}");
 }
 
-// ---------------------------------------------------------------------------
-// 3. Wiele bloków: tekst + dwa tool_use
-// ---------------------------------------------------------------------------
-
 #[test]
 fn text_then_two_tool_calls_get_separate_anthropic_indices() {
     let (state, events) = run(vec![
@@ -324,16 +292,13 @@ fn text_then_two_tool_calls_get_separate_anthropic_indices() {
         names(&events),
         vec![
             "message_start",
-            // blok 0 – tekst
             "content_block_start",
             "content_block_delta",
             "content_block_stop",
-            // blok 1 – pierwsze narzędzie
             "content_block_start",
             "content_block_delta",
             "content_block_delta",
             "content_block_stop",
-            // blok 2 – drugie narzędzie
             "content_block_start",
             "content_block_delta",
             "content_block_stop",
@@ -342,8 +307,6 @@ fn text_then_two_tool_calls_get_separate_anthropic_indices() {
         ]
     );
 
-    // Kluczowa asercja: indeksy narzędzi OpenAI (0, 1) NIE są indeksami bloków
-    // Anthropic (1, 2) — bo blok 0 zajął tekst.
     assert_eq!(state.anthropic_index_for_tool(0), Some(1));
     assert_eq!(state.anthropic_index_for_tool(1), Some(2));
 
@@ -361,7 +324,6 @@ fn text_then_two_tool_calls_get_separate_anthropic_indices() {
     assert_eq!(field(&events[8], &["content_block", "name"]), "get_time");
     assert_eq!(field(&events[10], &["index"]), 2);
 
-    // Oba zlepki argumentów są poprawnym JSON-em, każdy pod swoim indeksem bloku.
     let first = concatenated_partial_json(&events, 1);
     let second = concatenated_partial_json(&events, 2);
     assert_eq!(
@@ -405,13 +367,8 @@ fn text_after_tool_call_opens_a_new_text_block() {
     assert_eq!(state.anthropic_index_for_tool(0), Some(0));
     assert_eq!(field(&events[4], &["index"]), 1);
     assert_eq!(field(&events[4], &["content_block", "type"]), "text");
-    // Obecność zamkniętego bloku tool_use wymusza stop_reason = tool_use.
     assert_eq!(field(&events[7], &["delta", "stop_reason"]), "tool_use");
 }
-
-// ---------------------------------------------------------------------------
-// Przypadki brzegowe
-// ---------------------------------------------------------------------------
 
 #[test]
 fn finish_without_any_chunk_still_emits_full_envelope() {
@@ -439,7 +396,6 @@ fn abort_closes_open_block_but_sends_no_message_stop() {
     let mut state = StreamState::new("claude-sonnet-4");
     let _ = state.handle_chunk(&text_chunk("hi"));
     let events = state.abort();
-    // message_start już poszedł przy handle_chunk; abort tylko domyka blok.
     assert_eq!(names(&events), vec!["content_block_stop"]);
 }
 
@@ -465,10 +421,6 @@ fn error_event_has_anthropic_shape() {
     assert_eq!(field(&event, &["error", "type"]), "api_error");
     assert_eq!(field(&event, &["error", "message"]), "provider zamilkł");
 }
-
-// ---------------------------------------------------------------------------
-// Rozumowanie (thinking) i sekwencje stopu
-// ---------------------------------------------------------------------------
 
 fn reasoning_chunk(field_name: &str, text: &str) -> ChatCompletionChunk {
     let mut delta = serde_json::Map::new();
@@ -504,11 +456,11 @@ fn reasoning_becomes_thinking_block_before_text_when_enabled() {
         names(&events),
         vec![
             "message_start",
-            "content_block_start", // 0: thinking
+            "content_block_start",
             "content_block_delta",
             "content_block_delta",
             "content_block_stop",
-            "content_block_start", // 1: text
+            "content_block_start",
             "content_block_delta",
             "content_block_stop",
             "message_delta",
@@ -566,7 +518,6 @@ fn stop_sequence_is_reported_when_provider_names_it() {
         "id": "chatcmpl-test",
         "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop", "stop_reason": "###" }]
     }));
-    // OpenRouter powtarza finish_reason w chunku z usage — bez stop_reason.
     let usage = chunk(json!({
         "id": "chatcmpl-test",
         "choices": [{ "index": 0, "delta": {}, "finish_reason": "stop" }],

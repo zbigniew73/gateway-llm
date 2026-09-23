@@ -1,12 +1,3 @@
-//! Proaktywny token-bucket rate limiter per provider (nie per deployment/alias —
-//! `rpm` w configu to limit na CAŁE konto danego providera, dzielony przez
-//! wszystkie deploymenty, które go używają).
-//!
-//! W przeciwieństwie do `HealthTracker` (który reaguje POST FACTO na 429/5xx),
-//! ten limiter ma nie dopuścić do wysłania żądania, które i tak dostałoby 429.
-//! Providerzy bez skonfigurowanego `rpm` są zawsze dostępni (brak wpisu w
-//! `buckets` == brak limitu).
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -26,7 +17,7 @@ impl Bucket {
         let capacity = f64::from(rpm.max(1));
         Self {
             capacity,
-            tokens: capacity, // startujemy z pełnym kubełkiem, nie od zera
+            tokens: capacity,
             refill_per_sec: capacity / 60.0,
             last_refill: Instant::now(),
         }
@@ -58,8 +49,6 @@ impl RateLimiter {
         Self { buckets }
     }
 
-    /// Podgląd BEZ zużycia tokena — używany przy wyborze kolejności kandydatów
-    /// (analogicznie do `HealthTracker::is_available`).
     pub fn has_capacity(&self, provider: &str) -> bool {
         let Some(lock) = self.buckets.get(provider) else {
             return true;
@@ -72,11 +61,6 @@ impl RateLimiter {
         bucket.tokens >= 1.0
     }
 
-    /// Faktycznie zużywa token, jeśli jest dostępny. Zwraca `false`, gdy
-    /// kubełek jest pusty — wywołujący i tak wysyła żądanie (patrz
-    /// `Router::dispatch_one`: to tylko księgowanie, nie bramka blokująca,
-    /// żeby zachować tę samą filozofię co cooldown: "lepiej spróbować, niż
-    /// nic"), ale wtedy świadomie ryzykuje 429 u providera.
     pub fn try_acquire(&self, provider: &str) -> bool {
         let Some(lock) = self.buckets.get(provider) else {
             return true;
@@ -150,7 +134,6 @@ mod tests {
 
     #[test]
     fn bucket_refills_over_time() {
-        // 600 RPM => 10 tokenów/s, więc 150ms dolewa ~1.5 tokena.
         let limiter = RateLimiter::new(&providers_with_rpm("p", 600));
         for _ in 0..600 {
             assert!(limiter.try_acquire("p"));

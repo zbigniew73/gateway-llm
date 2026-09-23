@@ -1,8 +1,3 @@
-//! Fallback między deploymentami na prawdziwym routerze i lokalnych serwerach HTTP:
-//! - 400 "za długi kontekst" przechodzi dalej (kolejny deployment / fallback_model),
-//!   każde inne 400 kończy routing od razu;
-//! - deployment bez wolnego limitu RPM jest próbowany jako ostatnia deska ratunku.
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -19,7 +14,6 @@ const OK_BODY: &str = r#"{"id":"x","choices":[{"index":0,"message":{"role":"assi
 const CONTEXT_400: &str = r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, you requested 40000 tokens."}}"#;
 const GENERIC_400: &str = r#"{"error":{"message":"invalid tool schema: missing 'type'"}}"#;
 
-/// Serwer odpowiadający zawsze tym samym statusem i treścią; liczy żądania.
 async fn mock(status: u16, body: &'static str) -> (u16, Arc<AtomicUsize>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -216,15 +210,12 @@ async fn deployment_over_rpm_limit_is_still_tried_as_last_resort() {
         }],
     );
 
-    // 1. żądanie zużywa jedyny token p1.
     let first = router
         .dispatch("a", &body(), false, false, "t1")
         .await
         .unwrap();
     assert_eq!(first.provider, "p1");
 
-    // 2. żądanie: p1 bez wolnego limitu idzie na koniec, p2 zwraca 500 —
-    // wtedy p1 musi zostać spróbowany, a nie pominięty.
     let second = router
         .dispatch("a", &body(), false, false, "t2")
         .await

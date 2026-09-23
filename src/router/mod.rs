@@ -1,9 +1,3 @@
-//! Wspólny router/fallback dla OBU endpointów.
-//!
-//! `Router::dispatch()` dostaje alias modelu + body już w kształcie OpenAI i zwraca
-//! surową `reqwest::Response` pierwszego deploymentu, który odpowiedział poprawnie.
-//! Handlery różnią się wyłącznie tym, co z tą odpowiedzią robią (passthrough vs translacja).
-
 pub mod health;
 pub mod rate_limit;
 
@@ -19,7 +13,6 @@ use crate::providers;
 use crate::router::health::HealthTracker;
 use crate::router::rate_limit::RateLimiter;
 
-/// Wynik udanego routingu.
 pub struct Dispatched {
     pub response: reqwest::Response,
     pub provider: String,
@@ -58,14 +51,6 @@ impl Router {
         &self.health
     }
 
-    /// Punkt wejścia routingu: próbuje alias, a jeżeli WSZYSTKIE jego
-    /// `deployments` zawiodą, przechodzi na `fallback_model` (o ile ustawiony
-    /// w configu) i próbuje od nowa na tamtym aliasie. Konfiguracja jest
-    /// walidowana pod kątem cykli przy starcie (`Config::validate`), ale
-    /// `visited` to dodatkowe zabezpieczenie w runtime.
-    ///
-    /// `stream_usage`: czy wywołujący chce usage w streamie. Faktycznie
-    /// wysyłamy `stream_options` tylko providerom z `stream_usage: true`.
     pub async fn dispatch(
         &self,
         alias: &str,
@@ -92,8 +77,6 @@ impl Router {
                 .await
             {
                 Ok(dispatched) => return Ok(dispatched),
-                // Błąd, którego inny model nie naprawi (np. wadliwe żądanie) —
-                // fallback tylko opóźniłby odpowiedź i zmarnował limity.
                 Err(Failure::Terminal(err)) => return Err(err),
                 Err(Failure::Exhausted(err)) => {
                     let fallback = self
@@ -119,11 +102,6 @@ impl Router {
         }
     }
 
-    /// Przechodzi po deploymentach JEDNEGO aliasu w kolejności `order` i zwraca
-    /// pierwszą udaną odpowiedź providera. Deploymenty w cooldownie są pomijane
-    /// w pierwszym podejściu; jeżeli wszystkie są w cooldownie, próbujemy ich
-    /// mimo to (lepiej spróbować, niż odesłać klientowi błąd bez żadnej próby).
-    /// Nie zna `fallback_model` — tym zajmuje się wywołujący [`dispatch`](Self::dispatch).
     async fn dispatch_one(
         &self,
         alias: &str,
@@ -137,10 +115,6 @@ impl Router {
             .model_entry(alias)
             .ok_or_else(|| Failure::Terminal(AppError::UnknownModel(alias.to_string())))?;
 
-        // Kolejność: najpierw zdrowe z wolnym limitem RPM, potem zdrowe BEZ
-        // wolnego limitu (ostatnia deska ratunku — nasz kubełek to tylko
-        // szacunek, provider może jeszcze przyjąć żądanie). Deploymenty w
-        // cooldownie pomijamy, chyba że żaden inny nie jest dostępny.
         let (mut candidates, over_limit): (Vec<&Deployment>, Vec<&Deployment>) = entry
             .deployments
             .iter()
@@ -164,7 +138,6 @@ impl Router {
             let provider = match self.config.provider(&deployment.provider) {
                 Some(provider) => provider,
                 None => {
-                    // Walidacja configu tego nie przepuści, ale nie panikujemy.
                     tracing::error!(
                         request_id,
                         provider = %deployment.provider,
@@ -207,10 +180,6 @@ impl Router {
             let started = Instant::now();
 
             if !self.rate_limiter.try_acquire(&deployment.provider) {
-                // Nie pomijamy wysyłki — to tylko księgowanie kubełka. Trafiamy
-                // tu, gdy deployment bez wolnego limitu jest ostatnią deską
-                // ratunku (patrz kolejność kandydatów wyżej) albo przy wyścigu
-                // z równoległym żądaniem.
                 tracing::warn!(
                     request_id,
                     alias,
@@ -222,10 +191,6 @@ impl Router {
             let request =
                 providers::build_request(&self.client, provider, &api_key, &upstream_body, timeout);
 
-            // Dla streamu timeout request-level jest wyłączony, więc pilnujemy
-            // przynajmniej fazy nawiązania połączenia i nagłówków (ciszę w
-            // trakcie streamu pilnują już handlery obu endpointów, osobnym
-            // `stream_idle_timeout_seconds`).
             let send = async {
                 if stream {
                     match tokio::time::timeout(self.config.connect_timeout(), request.send()).await
@@ -285,9 +250,6 @@ impl Router {
                         AppError::upstream(deployment.provider.clone(), status.as_u16(), body_text);
 
                     if context_exceeded {
-                        // Za długi kontekst dla TEGO modelu — kolejny deployment
-                        // (albo fallback_model) może mieć większe okno. To nie
-                        // awaria providera, więc bez liczenia do cooldownu.
                         tracing::warn!(
                             request_id,
                             alias,
@@ -313,8 +275,6 @@ impl Router {
                         );
                         last_error = Some(error);
                     } else {
-                        // 4xx po stronie klienta (np. 400 – zły request) nie naprawi
-                        // się na innym providerze ani modelu; zwracamy od razu.
                         tracing::warn!(
                             request_id,
                             alias,
@@ -334,18 +294,11 @@ impl Router {
     }
 }
 
-/// Jak zakończył się routing jednego aliasu.
 enum Failure {
-    /// Wszystkie deploymenty zawiodły (albo przekroczyły okno kontekstu) —
-    /// ma sens spróbować `fallback_model`.
     Exhausted(AppError),
-    /// Błąd, którego inny alias/model nie naprawi — zwracamy go od razu.
     Terminal(AppError),
 }
 
-/// Czy błąd providera oznacza przekroczone okno kontekstu modelu. Heurystyka
-/// po treści: każdy provider formułuje to inaczej, więc łapiemy typowe frazy
-/// (OpenAI, vLLM/NIM, OpenRouter). Nierozpoznany komunikat = zwykły błąd 4xx.
 fn is_context_length_error(status: u16, body: &str) -> bool {
     if !matches!(status, 400 | 422) {
         return false;
@@ -363,8 +316,6 @@ fn is_context_length_error(status: u16, body: &str) -> bool {
     .any(|phrase| body.contains(phrase))
 }
 
-/// Body wysyłane do konkretnego deploymentu: podmieniony `model` i `stream`,
-/// a `stream_options.include_usage` tylko gdy prosimy o usage w streamie.
 fn build_upstream_body(
     body: &Value,
     model: &str,
@@ -386,7 +337,6 @@ fn build_upstream_body(
     Ok(upstream)
 }
 
-/// Czy przy takim kodzie HTTP warto spróbować kolejnego deploymentu.
 fn is_retryable(status: u16) -> bool {
     matches!(status, 401 | 402 | 403 | 404 | 408 | 409 | 413 | 429) || status >= 500
 }
@@ -398,17 +348,14 @@ mod tests {
 
     #[test]
     fn context_length_errors_are_recognized_across_providers() {
-        // OpenAI
         assert!(is_context_length_error(
             400,
             r#"{"error":{"code":"context_length_exceeded","message":"..."}}"#
         ));
-        // vLLM / NVIDIA NIM
         assert!(is_context_length_error(
             400,
             "This model's maximum context length is 32768 tokens. However, you requested 40000 tokens."
         ));
-        // OpenRouter
         assert!(is_context_length_error(
             400,
             "This endpoint's maximum context length is 131072 tokens."
@@ -430,7 +377,6 @@ mod tests {
             400,
             "unsupported parameter: top_k"
         ));
-        // Fraza pasuje, ale status nie jest błędem walidacji żądania.
         assert!(!is_context_length_error(
             500,
             "maximum context length exceeded"
