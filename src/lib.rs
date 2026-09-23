@@ -23,15 +23,22 @@ pub use config::Config;
 pub use error::{AnthropicError, AppError, ErrorStyle};
 pub use state::AppState;
 
+/// Maksymalny rozmiar ciała żądania. Domyślne 2 MB z axum jest za małe dla
+/// długich sesji Claude Code i obrazów w base64; 32 MB to limit samego
+/// Anthropic Messages API.
+pub const MAX_REQUEST_BODY_BYTES: usize = 32 * 1024 * 1024;
+
 /// Buduje kompletny `axum::Router` gatewaya.
 ///
 /// `/healthz` jest celowo POZA middleware auth; oba endpointy `/v1/*` są nim objęte.
 pub fn build_app(state: AppState) -> axum::Router {
+    use axum::extract::DefaultBodyLimit;
     use axum::routing::{get, post};
 
     let protected = axum::Router::new()
         .route("/v1/chat/completions", post(handlers::chat_completions::handle))
         .route("/v1/messages", post(handlers::messages::handle))
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::require_api_key,
