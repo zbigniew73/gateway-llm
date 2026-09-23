@@ -167,6 +167,16 @@ pub async fn handle(
     Ok(Sse::new(events).into_response())
 }
 
+/// `POST /v1/messages/count_tokens` — PRZYBLIŻONA liczba tokenów wejścia
+/// (backendy OpenAI-wire nie mają endpointu do liczenia tokenów).
+pub async fn count_tokens(body: Bytes) -> Result<Response, AnthropicError> {
+    let request: MessagesRequest = serde_json::from_slice(&body).map_err(|err| {
+        AppError::bad_request(format!("nie udało się odczytać żądania count_tokens: {err}"))
+    })?;
+
+    Ok(Json(serde_json::json!({ "input_tokens": request.estimate_input_tokens() })).into_response())
+}
+
 /// Zamienia zdarzenie z `StreamState` na `axum` SSE (`event:` + `data:`).
 fn to_sse(event: &SseEvent) -> Option<Event> {
     match Event::default().event(&event.event).json_data(&event.data) {

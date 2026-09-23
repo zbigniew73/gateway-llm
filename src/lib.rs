@@ -6,6 +6,7 @@
 //!   do jednego z backendów (OpenRouter / Novita.ai / Infron.ai / NVIDIA NIM).
 //! * `POST /v1/messages` — Anthropic Messages API-compatible (Claude Code), z pełną
 //!   translacją request / response / streaming do i z formatu OpenAI.
+//! * `POST /v1/messages/count_tokens` — przybliżone (lokalne) liczenie tokenów.
 //!
 //! Kod jest wydzielony do biblioteki (a binarka to cienki `main.rs`), żeby testy
 //! integracyjne w `tests/` mogły korzystać z [`protocol::translate::stream::StreamState`].
@@ -38,6 +39,10 @@ pub fn build_app(state: AppState) -> axum::Router {
     let protected = axum::Router::new()
         .route("/v1/chat/completions", post(handlers::chat_completions::handle))
         .route("/v1/messages", post(handlers::messages::handle))
+        .route(
+            "/v1/messages/count_tokens",
+            post(handlers::messages::count_tokens),
+        )
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),

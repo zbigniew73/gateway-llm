@@ -4,6 +4,7 @@ Lekki, lokalny LLM gateway (odpowiednik "lite" LiteLLM proxy) do użytku osobist
 
 - `POST /v1/chat/completions` — OpenAI-compatible (dla dowolnego klienta/SDK mówiącego formatem OpenAI, np. pi.dev)
 - `POST /v1/messages` — Anthropic Messages API-compatible (dla Claude Code i innych klientów Anthropic-style), z pełną translacją do/z formatu OpenAI
+- `POST /v1/messages/count_tokens` — liczba tokenów wejścia, ale **szacunkowa** (ok. 4 bajty na token, obraz ryczałtem ~1600): backendy OpenAI nie mają endpointu do dokładnego liczenia
 
 Backendy: OpenRouter, Novita.ai, Infron.ai, NVIDIA NIM — z routingiem po aliasach modeli i automatycznym fallbackiem między nimi.
 

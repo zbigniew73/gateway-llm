@@ -29,6 +29,8 @@ if [[ ! -f "$SCRIPT_DIR/.env" ]]; then
   cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
   echo "!!! Uzupelnij $SCRIPT_DIR/.env (GATEWAY_API_KEY + klucze providerow) przed startem uslugi."
 fi
+# Klucze API: tylko wlasciciel moze czytac (takze dla .env z wczesniejszej instalacji).
+chmod 600 "$SCRIPT_DIR/.env"
 
 # 4. systemd --user unit (sciezki absolutne wykryte na TEJ maszynie)
 mkdir -p "$SYSTEMD_USER_DIR"
