@@ -24,7 +24,10 @@ providers:
     chat_path: /chat/completions
 
 model_list:
+  # fallback_model: jeśli WSZYSTKIE deploymenty claude-sonnet-4 (obie próby
+  # poniżej) zawiodą, router przechodzi na alias gpt-4o zamiast oddać błąd.
   - model_name: claude-sonnet-4
+    fallback_model: gpt-4o
     deployments:
       - provider: openrouter
         model: anthropic/claude-sonnet-4
