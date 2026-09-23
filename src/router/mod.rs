@@ -90,7 +90,10 @@ impl Router {
                 .await
             {
                 Ok(dispatched) => return Ok(dispatched),
-                Err(err) => {
+                // Błąd, którego inny model nie naprawi (np. wadliwe żądanie) —
+                // fallback tylko opóźniłby odpowiedź i zmarnował limity.
+                Err(Failure::Terminal(err)) => return Err(err),
+                Err(Failure::Exhausted(err)) => {
                     let fallback = self
                         .config
                         .model_entry(&current)
@@ -126,11 +129,11 @@ impl Router {
         stream: bool,
         stream_usage: bool,
         request_id: &str,
-    ) -> Result<Dispatched, AppError> {
+    ) -> Result<Dispatched, Failure> {
         let entry = self
             .config
             .model_entry(alias)
-            .ok_or_else(|| AppError::UnknownModel(alias.to_string()))?;
+            .ok_or_else(|| Failure::Terminal(AppError::UnknownModel(alias.to_string())))?;
 
         let mut candidates: Vec<&Deployment> = entry
             .deployments
@@ -186,7 +189,8 @@ impl Router {
                 &deployment.model,
                 stream,
                 stream_usage && provider.stream_usage,
-            )?;
+            )
+            .map_err(Failure::Terminal)?;
 
             let timeout = if stream {
                 None
@@ -270,13 +274,28 @@ impl Router {
                     }
 
                     let body_text = response.text().await.unwrap_or_default();
+                    let context_exceeded = is_context_length_error(status.as_u16(), &body_text);
                     let error = AppError::upstream(
                         deployment.provider.clone(),
                         status.as_u16(),
                         body_text,
                     );
 
-                    if is_retryable(status.as_u16()) {
+                    if context_exceeded {
+                        // Za długi kontekst dla TEGO modelu — kolejny deployment
+                        // (albo fallback_model) może mieć większe okno. To nie
+                        // awaria providera, więc bez liczenia do cooldownu.
+                        tracing::warn!(
+                            request_id,
+                            alias,
+                            provider = %deployment.provider,
+                            model = %deployment.model,
+                            attempt = attempts,
+                            status = status.as_u16(),
+                            "przekroczone okno kontekstu modelu — próbuję kolejny deployment"
+                        );
+                        last_error = Some(error);
+                    } else if is_retryable(status.as_u16()) {
                         let cooled = self.health.record_failure(&health_key);
                         tracing::warn!(
                             request_id,
@@ -292,7 +311,7 @@ impl Router {
                         last_error = Some(error);
                     } else {
                         // 4xx po stronie klienta (np. 400 – zły request) nie naprawi
-                        // się na innym providerze; zwracamy od razu.
+                        // się na innym providerze ani modelu; zwracamy od razu.
                         tracing::warn!(
                             request_id,
                             alias,
@@ -300,14 +319,45 @@ impl Router {
                             status = status.as_u16(),
                             "provider zwrócił błąd klienta — bez fallbacku"
                         );
-                        return Err(error);
+                        return Err(Failure::Terminal(error));
                     }
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| AppError::NoDeploymentAvailable(alias.to_string())))
+        Err(Failure::Exhausted(last_error.unwrap_or_else(|| {
+            AppError::NoDeploymentAvailable(alias.to_string())
+        })))
     }
+}
+
+/// Jak zakończył się routing jednego aliasu.
+enum Failure {
+    /// Wszystkie deploymenty zawiodły (albo przekroczyły okno kontekstu) —
+    /// ma sens spróbować `fallback_model`.
+    Exhausted(AppError),
+    /// Błąd, którego inny alias/model nie naprawi — zwracamy go od razu.
+    Terminal(AppError),
+}
+
+/// Czy błąd providera oznacza przekroczone okno kontekstu modelu. Heurystyka
+/// po treści: każdy provider formułuje to inaczej, więc łapiemy typowe frazy
+/// (OpenAI, vLLM/NIM, OpenRouter). Nierozpoznany komunikat = zwykły błąd 4xx.
+fn is_context_length_error(status: u16, body: &str) -> bool {
+    if !matches!(status, 400 | 422) {
+        return false;
+    }
+    let body = body.to_ascii_lowercase();
+    [
+        "context_length_exceeded",
+        "context length",
+        "context window",
+        "maximum context",
+        "too many tokens",
+        "prompt is too long",
+    ]
+    .iter()
+    .any(|phrase| body.contains(phrase))
 }
 
 /// Body wysyłane do konkretnego deploymentu: podmieniony `model` i `stream`,
@@ -340,8 +390,37 @@ fn is_retryable(status: u16) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_upstream_body, is_retryable};
+    use super::{build_upstream_body, is_context_length_error, is_retryable};
     use serde_json::json;
+
+    #[test]
+    fn context_length_errors_are_recognized_across_providers() {
+        // OpenAI
+        assert!(is_context_length_error(
+            400,
+            r#"{"error":{"code":"context_length_exceeded","message":"..."}}"#
+        ));
+        // vLLM / NVIDIA NIM
+        assert!(is_context_length_error(
+            400,
+            "This model's maximum context length is 32768 tokens. However, you requested 40000 tokens."
+        ));
+        // OpenRouter
+        assert!(is_context_length_error(
+            400,
+            "This endpoint's maximum context length is 131072 tokens."
+        ));
+        assert!(is_context_length_error(422, "Input exceeds the context window"));
+        assert!(is_context_length_error(400, "Prompt is too long"));
+    }
+
+    #[test]
+    fn other_client_errors_are_not_context_errors() {
+        assert!(!is_context_length_error(400, "invalid tool schema: missing 'type'"));
+        assert!(!is_context_length_error(400, "unsupported parameter: top_k"));
+        // Fraza pasuje, ale status nie jest błędem walidacji żądania.
+        assert!(!is_context_length_error(500, "maximum context length exceeded"));
+    }
 
     #[test]
     fn stream_options_added_only_for_stream_with_usage_enabled() {

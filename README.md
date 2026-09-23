@@ -103,3 +103,5 @@ model_list:
 ```
 
 Klient zawsze dostaje z powrotem pole `model` z aliasem, którego użył w żądaniu (`cc-main`), niezależnie od tego, który deployment/alias faktycznie obsłużył zapytanie — identycznie jak przy zwykłym fallbacku między deploymentami. Cykle w `fallback_model` (np. A → B → A) są odrzucane już przy starcie (`config.validate()`).
+
+Błędy 400 a fallback: błąd „przekroczone okno kontekstu modelu” (rozpoznawany po treści, np. `context_length_exceeded`, `maximum context length`) przechodzi do kolejnego deploymentu, a potem do `fallback_model` — inny model może mieć większe okno. Nie liczy się do cooldownu. Każde inne 400/4xx (wadliwe żądanie) wraca do klienta od razu, bez prób na kolejnych deploymentach i bez `fallback_model`.
