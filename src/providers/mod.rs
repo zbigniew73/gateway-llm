@@ -53,6 +53,7 @@ mod tests {
         let provider = ProviderConfig {
             base_url: "https://openrouter.ai/api/v1/".to_string(),
             chat_path: "/chat/completions".to_string(),
+            rpm: None,
         };
         assert_eq!(
             provider.chat_url(),
@@ -62,6 +63,7 @@ mod tests {
         let provider = ProviderConfig {
             base_url: "https://llm.onerouter.pro".to_string(),
             chat_path: "v1/chat/completions".to_string(),
+            rpm: None,
         };
         assert_eq!(
             provider.chat_url(),

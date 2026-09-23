@@ -71,6 +71,16 @@ Auth: gateway akceptuje klucz zarówno w nagłówku `x-api-key` (tak wysyła Cla
 
 Każdy wpis w `model_list` to alias modelu (tego używają klienci w polu `model`) z uporządkowaną listą deploymentów — gateway próbuje ich po kolei (`order`) i automatycznie przechodzi do kolejnego przy błędzie (5xx/429/timeout), z cooldownem po serii błędów (`routing.error_threshold` / `routing.cooldown_seconds`).
 
+Opcjonalne pole `rpm: <liczba>` na providerze w sekcji `providers` włącza proaktywny rate limiter (token bucket) — gateway pilnuje, żeby NIE przekroczyć tego limitu żądań/min do danego providera (dzielonego przez wszystkie deploymenty, które go używają), zamiast reagować dopiero na 429. Bez `rpm` provider jest bez limitu z naszej strony:
+
+```yaml
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    chat_path: /chat/completions
+    rpm: 20   # np. limit darmowych modeli OpenRoutera
+```
+
 Opcjonalne pole `fallback_model: <inny-model_name>` na wpisie aliasu pozwala przejść na CAŁKIEM INNY alias, gdy wyczerpią się WSZYSTKIE `deployments` bieżącego (a nie tylko pojedynczy deployment — to już obsługuje `order`):
 
 ```yaml

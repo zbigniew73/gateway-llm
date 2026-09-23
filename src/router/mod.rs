@@ -5,6 +5,7 @@
 //! Handlery różnią się wyłącznie tym, co z tą odpowiedzią robią (passthrough vs translacja).
 
 pub mod health;
+pub mod rate_limit;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ use crate::config::{Config, Deployment};
 use crate::error::AppError;
 use crate::providers;
 use crate::router::health::HealthTracker;
+use crate::router::rate_limit::RateLimiter;
 
 /// Wynik udanego routingu.
 pub struct Dispatched {
@@ -29,6 +31,7 @@ pub struct Router {
     client: reqwest::Client,
     config: Arc<Config>,
     health: HealthTracker,
+    rate_limiter: RateLimiter,
 }
 
 impl Router {
@@ -39,10 +42,12 @@ impl Router {
             .map_err(|err| AppError::internal(format!("nie udało się zbudować klienta HTTP: {err}")))?;
 
         let health = HealthTracker::new(&config.routing);
+        let rate_limiter = RateLimiter::new(&config.providers);
         Ok(Self {
             client,
             config,
             health,
+            rate_limiter,
         })
     }
 
@@ -121,14 +126,17 @@ impl Router {
         let mut candidates: Vec<&Deployment> = entry
             .deployments
             .iter()
-            .filter(|deployment| self.health.is_available(&deployment.health_key()))
+            .filter(|deployment| {
+                self.health.is_available(&deployment.health_key())
+                    && self.rate_limiter.has_capacity(&deployment.provider)
+            })
             .collect();
 
         if candidates.is_empty() {
             tracing::warn!(
                 request_id,
                 alias,
-                "wszystkie deploymenty są w cooldownie — próbuję mimo to"
+                "wszystkie deploymenty są w cooldownie albo bez wolnego limitu RPM — próbuję mimo to"
             );
             candidates = entry.deployments.iter().collect();
         }
@@ -183,6 +191,18 @@ impl Router {
             attempts += 1;
             let health_key = deployment.health_key();
             let started = Instant::now();
+
+            if !self.rate_limiter.try_acquire(&deployment.provider) {
+                // Nie pomijamy wysyłki — to tylko księgowanie kubełka. Trafiamy
+                // tu głównie w ścieżce "wszystkie bez limitu, próbuję mimo to"
+                // (patrz wyżej) albo przy wyścigu z równoległym żądaniem.
+                tracing::warn!(
+                    request_id,
+                    alias,
+                    provider = %deployment.provider,
+                    "wysyłam mimo braku wolnego tokena RPM — ryzykuję 429 u providera"
+                );
+            }
 
             let request =
                 providers::build_request(&self.client, provider, &api_key, &upstream_body, timeout);

@@ -13,15 +13,19 @@ providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1
     chat_path: /chat/completions
+    rpm: 20
   novita:
     base_url: https://api.novita.ai/openai
     chat_path: /v1/chat/completions
+    rpm: 60
   infron:
     base_url: https://llm.onerouter.pro
     chat_path: /v1/chat/completions
+    rpm: 60
   nvidia:
     base_url: https://integrate.api.nvidia.com/v1
     chat_path: /chat/completions
+    rpm: 40
 
 model_list:
   # fallback_model: jeśli WSZYSTKIE deploymenty claude-sonnet-4 (obie próby

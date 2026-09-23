@@ -98,6 +98,13 @@ impl Default for RoutingConfig {
 pub struct ProviderConfig {
     pub base_url: String,
     pub chat_path: String,
+    /// Limit żądań na minutę wychodzących z TEGO gatewaya do tego providera
+    /// (token bucket w `Router`). `None` = bez limitu. To limit CAŁEGO konta
+    /// providera, dzielony przez wszystkie deploymenty, które go używają —
+    /// nie widzi ruchu spoza gatewaya (np. tego samego klucza użytego gdzie
+    /// indziej równolegle).
+    #[serde(default)]
+    pub rpm: Option<u32>,
 }
 
 impl ProviderConfig {
@@ -220,6 +227,11 @@ impl Config {
             if provider.chat_path.trim().is_empty() {
                 return Err(ConfigError::Invalid(format!(
                     "provider '{name}': puste 'chat_path'"
+                )));
+            }
+            if provider.rpm == Some(0) {
+                return Err(ConfigError::Invalid(format!(
+                    "provider '{name}': 'rpm' nie może wynosić 0 (usuń pole, żeby wyłączyć limit)"
                 )));
             }
         }
@@ -388,6 +400,7 @@ mod tests {
         ProviderConfig {
             base_url: "https://example.test".to_string(),
             chat_path: "/chat/completions".to_string(),
+            rpm: None,
         }
     }
 
@@ -453,6 +466,22 @@ mod tests {
             entry("b", Some("c")),
             entry("c", None),
         ]);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn provider_rpm_zero_is_rejected() {
+        let mut config = config_with(vec![entry("main", None)]);
+        config.providers.get_mut("p").unwrap().rpm = Some(0);
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("'rpm' nie może wynosić 0"), "{err}");
+    }
+
+    #[test]
+    fn provider_rpm_missing_or_positive_is_valid() {
+        let mut config = config_with(vec![entry("main", None)]);
+        assert!(config.validate().is_ok());
+        config.providers.get_mut("p").unwrap().rpm = Some(20);
         assert!(config.validate().is_ok());
     }
 }
