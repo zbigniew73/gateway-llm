@@ -212,6 +212,7 @@ cargo test
 ```
 
 CI (GitHub Actions) uruchamia te same kroki przy każdym pushu na `main` i w pull requestach. Testy nie wymagają dostępu do sieci ani kluczy API.
+
 ---
 
 ## English
