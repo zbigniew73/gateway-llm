@@ -23,6 +23,14 @@ use crate::protocol::translate::response::openai_to_anthropic_response;
 use crate::protocol::translate::stream::{SseEvent, StreamState};
 use crate::state::AppState;
 
+/// Jak zakończyło się czytanie strumienia providera.
+enum StreamOutcome {
+    /// `[DONE]` albo naturalny koniec strumienia HTTP.
+    Completed,
+    /// Timeout bezczynności albo błąd odczytu — odpowiedź jest ucięta.
+    Aborted(String),
+}
+
 pub async fn handle(
     State(state): State<AppState>,
     body: Bytes,
@@ -79,25 +87,32 @@ pub async fn handle(
         let mut event_source = Box::pin(upstream.bytes_stream().eventsource());
         let mut machine = StreamState::new(alias);
 
-        loop {
+        // Rozróżniamy zakończenie naturalne (`[DONE]` / koniec strumienia) od
+        // przerwania błędem — inaczej klient dostałby fałszywy `message_stop`
+        // sugerujący kompletną odpowiedź, mimo że została ucięta.
+        let outcome = loop {
             let next = tokio::time::timeout(idle_timeout, event_source.next()).await;
 
             let event = match next {
                 Err(_) => {
                     tracing::warn!(
                         request_id = %request_id_for_stream,
-                        "provider zamilkł — zamykam strumień"
+                        "provider zamilkł — przerywam strumień"
                     );
-                    break;
+                    break StreamOutcome::Aborted(
+                        "provider nie odpowiedział w oczekiwanym czasie".to_string(),
+                    );
                 }
-                Ok(None) => break,
+                Ok(None) => break StreamOutcome::Completed,
                 Ok(Some(Err(err))) => {
                     tracing::warn!(
                         request_id = %request_id_for_stream,
                         error = %err,
-                        "błąd odczytu strumienia providera — zamykam strumień"
+                        "błąd odczytu strumienia providera — przerywam strumień"
                     );
-                    break;
+                    break StreamOutcome::Aborted(format!(
+                        "błąd odczytu strumienia providera: {err}"
+                    ));
                 }
                 Ok(Some(Ok(event))) => event,
             };
@@ -107,7 +122,7 @@ pub async fn handle(
                 continue;
             }
             if data == "[DONE]" {
-                break;
+                break StreamOutcome::Completed;
             }
 
             match serde_json::from_str::<ChatCompletionChunk>(data) {
@@ -126,11 +141,25 @@ pub async fn handle(
                     );
                 }
             }
-        }
+        };
 
-        for translated in machine.finish() {
-            if let Some(sse) = to_sse(&translated) {
-                yield Ok::<Event, Infallible>(sse);
+        match outcome {
+            StreamOutcome::Completed => {
+                for translated in machine.finish() {
+                    if let Some(sse) = to_sse(&translated) {
+                        yield Ok::<Event, Infallible>(sse);
+                    }
+                }
+            }
+            StreamOutcome::Aborted(message) => {
+                for translated in machine.abort() {
+                    if let Some(sse) = to_sse(&translated) {
+                        yield Ok::<Event, Infallible>(sse);
+                    }
+                }
+                if let Some(sse) = to_sse(&SseEvent::error(message)) {
+                    yield Ok::<Event, Infallible>(sse);
+                }
             }
         }
     };

@@ -410,6 +410,38 @@ fn finish_is_idempotent() {
 }
 
 #[test]
+fn abort_closes_open_block_but_sends_no_message_stop() {
+    let mut state = StreamState::new("claude-sonnet-4");
+    let _ = state.handle_chunk(&text_chunk("hi"));
+    let events = state.abort();
+    // message_start już poszedł przy handle_chunk; abort tylko domyka blok.
+    assert_eq!(names(&events), vec!["content_block_stop"]);
+}
+
+#[test]
+fn abort_before_any_chunk_still_sends_message_start() {
+    let mut state = StreamState::new("claude-sonnet-4");
+    let events = state.abort();
+    assert_eq!(names(&events), vec!["message_start"]);
+}
+
+#[test]
+fn abort_after_finish_is_a_noop() {
+    let mut state = StreamState::new("claude-sonnet-4");
+    let _ = state.finish();
+    assert!(state.abort().is_empty());
+}
+
+#[test]
+fn error_event_has_anthropic_shape() {
+    let event = SseEvent::error("provider zamilkł");
+    assert_eq!(event.event, "error");
+    assert_eq!(field(&event, &["type"]), "error");
+    assert_eq!(field(&event, &["error", "type"]), "api_error");
+    assert_eq!(field(&event, &["error", "message"]), "provider zamilkł");
+}
+
+#[test]
 fn empty_content_deltas_do_not_open_blocks() {
     let (_state, events) = run(vec![
         chunk(json!({

@@ -37,6 +37,20 @@ impl SseEvent {
             data,
         }
     }
+
+    /// Zdarzenie `error` w formacie Anthropic — używane, gdy strumień providera
+    /// urywa się przed naturalnym zakończeniem (timeout bezczynności, zerwane
+    /// połączenie), więc klient nie może dostać fałszywego `message_stop`
+    /// sugerującego, że odpowiedź jest kompletna.
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::new(
+            "error",
+            json!({
+                "type": "error",
+                "error": { "type": "api_error", "message": message.into() }
+            }),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,6 +217,23 @@ impl StreamState {
             "message_stop",
             json!({ "type": "message_stop" }),
         ));
+
+        events
+    }
+
+    /// Przerywa strumień po błędzie transportu/timeoucie: domyka ewentualny
+    /// otwarty blok, ale — inaczej niż [`finish`](Self::finish) — NIE wysyła
+    /// `message_delta`/`message_stop`. Wywołujący dokleja po tym zdarzenie
+    /// `error` ([`SseEvent::error`]). Wywołanie wielokrotne jest bezpieczne.
+    pub fn abort(&mut self) -> Vec<SseEvent> {
+        let mut events = Vec::new();
+        if self.finished {
+            return events;
+        }
+
+        self.ensure_message_start(&mut events);
+        self.close_current_block(&mut events);
+        self.finished = true;
 
         events
     }
