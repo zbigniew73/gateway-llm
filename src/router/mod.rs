@@ -6,6 +6,7 @@
 
 pub mod health;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -49,11 +50,63 @@ impl Router {
         &self.health
     }
 
-    /// Przechodzi po deploymentach aliasu w kolejności `order` i zwraca pierwszą
-    /// udaną odpowiedź providera. Deploymenty w cooldownie są pomijane w pierwszym
-    /// podejściu; jeżeli wszystkie są w cooldownie, próbujemy ich mimo to (lepiej
-    /// spróbować, niż odesłać klientowi błąd bez żadnej próby).
+    /// Punkt wejścia routingu: próbuje alias, a jeżeli WSZYSTKIE jego
+    /// `deployments` zawiodą, przechodzi na `fallback_model` (o ile ustawiony
+    /// w configu) i próbuje od nowa na tamtym aliasie. Konfiguracja jest
+    /// walidowana pod kątem cykli przy starcie (`Config::validate`), ale
+    /// `visited` to dodatkowe zabezpieczenie w runtime.
     pub async fn dispatch(
+        &self,
+        alias: &str,
+        body: &Value,
+        stream: bool,
+        request_id: &str,
+    ) -> Result<Dispatched, AppError> {
+        let mut current = alias.to_string();
+        let mut visited: HashSet<String> = HashSet::new();
+
+        loop {
+            if !visited.insert(current.clone()) {
+                tracing::error!(
+                    request_id,
+                    alias = %current,
+                    "wykryto cykl w 'fallback_model' w trakcie routingu — przerywam"
+                );
+                return Err(AppError::NoDeploymentAvailable(alias.to_string()));
+            }
+
+            match self.dispatch_one(&current, body, stream, request_id).await {
+                Ok(dispatched) => return Ok(dispatched),
+                Err(err) => {
+                    let fallback = self
+                        .config
+                        .model_entry(&current)
+                        .and_then(|entry| entry.fallback_model.clone());
+
+                    match fallback {
+                        Some(next_alias) => {
+                            tracing::warn!(
+                                request_id,
+                                from_alias = %current,
+                                to_alias = %next_alias,
+                                error = %err,
+                                "alias wyczerpał deploymenty — przechodzę na 'fallback_model'"
+                            );
+                            current = next_alias;
+                        }
+                        None => return Err(err),
+                    }
+                }
+            }
+        }
+    }
+
+    /// Przechodzi po deploymentach JEDNEGO aliasu w kolejności `order` i zwraca
+    /// pierwszą udaną odpowiedź providera. Deploymenty w cooldownie są pomijane
+    /// w pierwszym podejściu; jeżeli wszystkie są w cooldownie, próbujemy ich
+    /// mimo to (lepiej spróbować, niż odesłać klientowi błąd bez żadnej próby).
+    /// Nie zna `fallback_model` — tym zajmuje się wywołujący [`dispatch`](Self::dispatch).
+    async fn dispatch_one(
         &self,
         alias: &str,
         body: &Value,

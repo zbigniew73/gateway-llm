@@ -116,6 +116,11 @@ pub struct ModelEntry {
     pub model_name: String,
     #[serde(default)]
     pub deployments: Vec<Deployment>,
+    /// Inny `model_name`, na który router przechodzi, gdy WSZYSTKIE
+    /// `deployments` tego aliasu zawiodą (a nie tylko pojedynczy deployment —
+    /// to już obsługuje kolejność `order` w `deployments`).
+    #[serde(default)]
+    pub fallback_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -260,6 +265,50 @@ impl Config {
             }
         }
 
+        for entry in &self.model_list {
+            let Some(fallback) = entry.fallback_model.as_deref() else {
+                continue;
+            };
+            if fallback.trim().is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "model '{}': puste 'fallback_model'",
+                    entry.model_name
+                )));
+            }
+            if fallback == entry.model_name {
+                return Err(ConfigError::Invalid(format!(
+                    "model '{}': 'fallback_model' wskazuje sam na siebie",
+                    entry.model_name
+                )));
+            }
+            if !seen_aliases.contains(fallback) {
+                return Err(ConfigError::Invalid(format!(
+                    "model '{}': nieznany 'fallback_model' '{fallback}' (brak takiego 'model_name')",
+                    entry.model_name
+                )));
+            }
+        }
+
+        // Cykle w łańcuchu fallback_model (A -> B -> A) wywróciłyby routing
+        // w nieskończoną pętlę — wyłapujemy je już przy starcie.
+        for entry in &self.model_list {
+            let mut chain: HashSet<&str> = HashSet::new();
+            chain.insert(entry.model_name.as_str());
+            let mut current = entry.model_name.as_str();
+            while let Some(next) = self
+                .model_entry(current)
+                .and_then(|e| e.fallback_model.as_deref())
+            {
+                if !chain.insert(next) {
+                    return Err(ConfigError::Invalid(format!(
+                        "model_list: cykl w 'fallback_model' zaczynający się od '{}'",
+                        entry.model_name
+                    )));
+                }
+                current = next;
+            }
+        }
+
         Ok(())
     }
 
@@ -329,4 +378,81 @@ fn default_error_window() -> u64 {
 
 fn default_cooldown() -> u64 {
     60
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider() -> ProviderConfig {
+        ProviderConfig {
+            base_url: "https://example.test".to_string(),
+            chat_path: "/chat/completions".to_string(),
+        }
+    }
+
+    fn deployment() -> Deployment {
+        Deployment {
+            provider: "p".to_string(),
+            model: "upstream-model".to_string(),
+            api_key_env: "SOME_KEY".to_string(),
+            order: 0,
+        }
+    }
+
+    fn config_with(model_list: Vec<ModelEntry>) -> Config {
+        let mut providers = HashMap::new();
+        providers.insert("p".to_string(), provider());
+        Config {
+            server: ServerConfig::default(),
+            routing: RoutingConfig::default(),
+            providers,
+            model_list,
+        }
+    }
+
+    fn entry(name: &str, fallback: Option<&str>) -> ModelEntry {
+        ModelEntry {
+            model_name: name.to_string(),
+            deployments: vec![deployment()],
+            fallback_model: fallback.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn fallback_model_pointing_at_known_alias_is_valid() {
+        let config = config_with(vec![entry("main", Some("backup")), entry("backup", None)]);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn fallback_model_pointing_at_unknown_alias_is_rejected() {
+        let config = config_with(vec![entry("main", Some("ghost"))]);
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("nieznany 'fallback_model'"), "{err}");
+    }
+
+    #[test]
+    fn fallback_model_cannot_point_at_itself() {
+        let config = config_with(vec![entry("main", Some("main"))]);
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("wskazuje sam na siebie"), "{err}");
+    }
+
+    #[test]
+    fn fallback_model_cycle_is_rejected() {
+        let config = config_with(vec![entry("a", Some("b")), entry("b", Some("a"))]);
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("cykl w 'fallback_model'"), "{err}");
+    }
+
+    #[test]
+    fn fallback_model_chain_of_three_is_valid() {
+        let config = config_with(vec![
+            entry("a", Some("b")),
+            entry("b", Some("c")),
+            entry("c", None),
+        ]);
+        assert!(config.validate().is_ok());
+    }
 }

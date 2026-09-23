@@ -70,3 +70,24 @@ Auth: gateway akceptuje klucz zarówno w nagłówku `x-api-key` (tak wysyła Cla
 ## Konfiguracja (`config.yaml`)
 
 Każdy wpis w `model_list` to alias modelu (tego używają klienci w polu `model`) z uporządkowaną listą deploymentów — gateway próbuje ich po kolei (`order`) i automatycznie przechodzi do kolejnego przy błędzie (5xx/429/timeout), z cooldownem po serii błędów (`routing.error_threshold` / `routing.cooldown_seconds`).
+
+Opcjonalne pole `fallback_model: <inny-model_name>` na wpisie aliasu pozwala przejść na CAŁKIEM INNY alias, gdy wyczerpią się WSZYSTKIE `deployments` bieżącego (a nie tylko pojedynczy deployment — to już obsługuje `order`):
+
+```yaml
+model_list:
+  - model_name: cc-main
+    fallback_model: cc-fallback
+    deployments:
+      - provider: openrouter
+        model: inclusionai/ling-3.0-flash-vl:free
+        api_key_env: OPENROUTER_API_KEY
+        order: 1
+  - model_name: cc-fallback
+    deployments:
+      - provider: infron
+        model: z-ai/glm-5.2
+        api_key_env: INFRON_API_KEY
+        order: 1
+```
+
+Klient zawsze dostaje z powrotem pole `model` z aliasem, którego użył w żądaniu (`cc-main`), niezależnie od tego, który deployment/alias faktycznie obsłużył zapytanie — identycznie jak przy zwykłym fallbacku między deploymentami. Cykle w `fallback_model` (np. A → B → A) są odrzucane już przy starcie (`config.validate()`).
