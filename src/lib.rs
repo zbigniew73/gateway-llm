@@ -37,7 +37,10 @@ pub fn build_app(state: AppState) -> axum::Router {
     use axum::routing::{get, post};
 
     let protected = axum::Router::new()
-        .route("/v1/chat/completions", post(handlers::chat_completions::handle))
+        .route(
+            "/v1/chat/completions",
+            post(handlers::chat_completions::handle),
+        )
         .route("/v1/messages", post(handlers::messages::handle))
         .route(
             "/v1/messages/count_tokens",

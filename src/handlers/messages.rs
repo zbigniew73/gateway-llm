@@ -38,7 +38,9 @@ pub async fn handle(
     let request_id = new_request_id();
 
     let request: MessagesRequest = serde_json::from_slice(&body).map_err(|err| {
-        AppError::bad_request(format!("nie udało się odczytać żądania Messages API: {err}"))
+        AppError::bad_request(format!(
+            "nie udało się odczytać żądania Messages API: {err}"
+        ))
     })?;
 
     let alias = request.model.clone();
@@ -48,7 +50,9 @@ pub async fn handle(
 
     let openai_request = anthropic_to_openai_request(&request)?;
     let payload = serde_json::to_value(&openai_request).map_err(|err| {
-        AppError::internal(format!("nie udało się zserializować żądania do providera: {err}"))
+        AppError::internal(format!(
+            "nie udało się zserializować żądania do providera: {err}"
+        ))
     })?;
 
     tracing::debug!(request_id = %request_id, alias = %alias, stream, "/v1/messages");
@@ -176,10 +180,15 @@ pub async fn handle(
 /// (backendy OpenAI-wire nie mają endpointu do liczenia tokenów).
 pub async fn count_tokens(body: Bytes) -> Result<Response, AnthropicError> {
     let request: MessagesRequest = serde_json::from_slice(&body).map_err(|err| {
-        AppError::bad_request(format!("nie udało się odczytać żądania count_tokens: {err}"))
+        AppError::bad_request(format!(
+            "nie udało się odczytać żądania count_tokens: {err}"
+        ))
     })?;
 
-    Ok(Json(serde_json::json!({ "input_tokens": request.estimate_input_tokens() })).into_response())
+    Ok(
+        Json(serde_json::json!({ "input_tokens": request.estimate_input_tokens() }))
+            .into_response(),
+    )
 }
 
 /// Zamienia zdarzenie z `StreamState` na `axum` SSE (`event:` + `data:`).

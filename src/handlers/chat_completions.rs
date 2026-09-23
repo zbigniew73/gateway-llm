@@ -23,11 +23,14 @@ use crate::state::AppState;
 pub async fn handle(State(state): State<AppState>, body: Bytes) -> Result<Response, AppError> {
     let request_id = new_request_id();
 
-    let payload: Value = serde_json::from_slice(&body)
-        .map_err(|err| AppError::bad_request(format!("ciało żądania nie jest poprawnym JSON: {err}")))?;
+    let payload: Value = serde_json::from_slice(&body).map_err(|err| {
+        AppError::bad_request(format!("ciało żądania nie jest poprawnym JSON: {err}"))
+    })?;
 
     if !payload.is_object() {
-        return Err(AppError::bad_request("ciało żądania musi być obiektem JSON"));
+        return Err(AppError::bad_request(
+            "ciało żądania musi być obiektem JSON",
+        ));
     }
 
     let alias = payload
@@ -62,10 +65,7 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Result<Respon
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, content_type),
-                (
-                    header::CACHE_CONTROL,
-                    HeaderValue::from_static("no-cache"),
-                ),
+                (header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
             ],
             Body::from_stream(idle_guarded(
                 upstream.bytes_stream(),
@@ -83,10 +83,17 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Result<Respon
         .unwrap_or_else(|| HeaderValue::from_static("application/json"));
 
     let bytes = upstream.bytes().await.map_err(|err| {
-        AppError::UpstreamTransport(format!("nie udało się odczytać odpowiedzi providera: {err}"))
+        AppError::UpstreamTransport(format!(
+            "nie udało się odczytać odpowiedzi providera: {err}"
+        ))
     })?;
 
-    Ok((StatusCode::OK, [(header::CONTENT_TYPE, content_type)], bytes).into_response())
+    Ok((
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, content_type)],
+        bytes,
+    )
+        .into_response())
 }
 
 /// Przepuszcza bajty streamu providera bez zmian, ale gdy provider zamilknie
@@ -176,7 +183,11 @@ mod tests {
 
     #[tokio::test]
     async fn complete_stream_is_passed_through_unchanged() {
-        let out = collect(stream::iter(vec![ok("data: {\"a\":1}\n\n"), ok("data: [DONE]\n\n")])).await;
+        let out = collect(stream::iter(vec![
+            ok("data: {\"a\":1}\n\n"),
+            ok("data: [DONE]\n\n"),
+        ]))
+        .await;
         assert_eq!(out, "data: {\"a\":1}\n\ndata: [DONE]\n\n");
     }
 
@@ -193,7 +204,10 @@ mod tests {
     async fn silence_at_event_boundary_adds_no_extra_separator() {
         let upstream = stream::iter(vec![ok("data: {\"a\":1}\n\n")]).chain(stream::pending());
         let out = collect(upstream).await;
-        assert!(out.starts_with("data: {\"a\":1}\n\ndata: {\"error\""), "{out}");
+        assert!(
+            out.starts_with("data: {\"a\":1}\n\ndata: {\"error\""),
+            "{out}"
+        );
     }
 
     #[tokio::test]

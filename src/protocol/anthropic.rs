@@ -85,7 +85,9 @@ impl AnthropicContent {
     /// Normalizuje treść do listy bloków.
     pub fn blocks(&self) -> Vec<AnthropicContentBlock> {
         match self {
-            AnthropicContent::Text(text) => vec![AnthropicContentBlock::Text { text: text.clone() }],
+            AnthropicContent::Text(text) => {
+                vec![AnthropicContentBlock::Text { text: text.clone() }]
+            }
             AnthropicContent::Blocks(blocks) => blocks.clone(),
         }
     }
@@ -238,7 +240,10 @@ impl MessagesRequest {
         for tool in self.tools.iter().flatten() {
             bytes += tool.name.len();
             bytes += tool.description.as_deref().map_or(0, str::len);
-            bytes += tool.input_schema.as_ref().map_or(0, |schema| schema.to_string().len());
+            bytes += tool
+                .input_schema
+                .as_ref()
+                .map_or(0, |schema| schema.to_string().len());
         }
 
         let total = tokens + bytes.div_ceil(BYTES_PER_TOKEN);
@@ -327,7 +332,10 @@ mod tests {
                                                "data": "A".repeat(1_000_000) } }
             ]}]
         }));
-        assert_eq!(req.estimate_input_tokens(), (IMAGE_TOKENS + MESSAGE_OVERHEAD_TOKENS) as u32);
+        assert_eq!(
+            req.estimate_input_tokens(),
+            (IMAGE_TOKENS + MESSAGE_OVERHEAD_TOKENS) as u32
+        );
     }
 
     #[test]

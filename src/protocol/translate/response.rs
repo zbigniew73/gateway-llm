@@ -25,11 +25,8 @@ pub fn openai_to_anthropic_response(
 
     if let Some(choice) = choice {
         finish_reason = choice.finish_reason.as_deref();
-        stop_sequence = matched_stop_sequence(
-            finish_reason,
-            choice.stop_reason.as_ref(),
-            stop_sequences,
-        );
+        stop_sequence =
+            matched_stop_sequence(finish_reason, choice.stop_reason.as_ref(), stop_sequences);
 
         if thinking_enabled {
             if let Some(reasoning) =
@@ -161,11 +158,16 @@ mod tests {
             &enabled.content[0],
             AnthropicContentBlock::Thinking { thinking, .. } if thinking == "2+2 to 4"
         ));
-        assert!(matches!(&enabled.content[1], AnthropicContentBlock::Text { text } if text == "Wynik: 4"));
+        assert!(
+            matches!(&enabled.content[1], AnthropicContentBlock::Text { text } if text == "Wynik: 4")
+        );
 
         let disabled = openai_to_anthropic_response(&with_reasoning(), "m", false, &[]);
         assert_eq!(disabled.content.len(), 1);
-        assert!(matches!(&disabled.content[0], AnthropicContentBlock::Text { .. }));
+        assert!(matches!(
+            &disabled.content[0],
+            AnthropicContentBlock::Text { .. }
+        ));
     }
 
     #[test]
@@ -175,7 +177,9 @@ mod tests {
                 "message": { "role": "assistant", "content": "ok", "reasoning": "myślę" } }]
         }));
         let out = openai_to_anthropic_response(&resp, "m", true, &[]);
-        assert!(matches!(&out.content[0], AnthropicContentBlock::Thinking { thinking, .. } if thinking == "myślę"));
+        assert!(
+            matches!(&out.content[0], AnthropicContentBlock::Thinking { thinking, .. } if thinking == "myślę")
+        );
     }
 
     #[test]

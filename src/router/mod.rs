@@ -40,7 +40,9 @@ impl Router {
             .user_agent(concat!("gateway-llm/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(config.connect_timeout())
             .build()
-            .map_err(|err| AppError::internal(format!("nie udało się zbudować klienta HTTP: {err}")))?;
+            .map_err(|err| {
+                AppError::internal(format!("nie udało się zbudować klienta HTTP: {err}"))
+            })?;
 
         let health = HealthTracker::new(&config.routing);
         let rate_limiter = RateLimiter::new(&config.providers);
@@ -229,8 +231,9 @@ impl Router {
                     match tokio::time::timeout(self.config.connect_timeout(), request.send()).await
                     {
                         Ok(result) => result.map_err(|err| err.to_string()),
-                        Err(_) => Err("przekroczono czas oczekiwania na nagłówki odpowiedzi"
-                            .to_string()),
+                        Err(_) => {
+                            Err("przekroczono czas oczekiwania na nagłówki odpowiedzi".to_string())
+                        }
                     }
                 } else {
                     request.send().await.map_err(|err| err.to_string())
@@ -278,11 +281,8 @@ impl Router {
 
                     let body_text = response.text().await.unwrap_or_default();
                     let context_exceeded = is_context_length_error(status.as_u16(), &body_text);
-                    let error = AppError::upstream(
-                        deployment.provider.clone(),
-                        status.as_u16(),
-                        body_text,
-                    );
+                    let error =
+                        AppError::upstream(deployment.provider.clone(), status.as_u16(), body_text);
 
                     if context_exceeded {
                         // Za długi kontekst dla TEGO modelu — kolejny deployment
@@ -413,16 +413,28 @@ mod tests {
             400,
             "This endpoint's maximum context length is 131072 tokens."
         ));
-        assert!(is_context_length_error(422, "Input exceeds the context window"));
+        assert!(is_context_length_error(
+            422,
+            "Input exceeds the context window"
+        ));
         assert!(is_context_length_error(400, "Prompt is too long"));
     }
 
     #[test]
     fn other_client_errors_are_not_context_errors() {
-        assert!(!is_context_length_error(400, "invalid tool schema: missing 'type'"));
-        assert!(!is_context_length_error(400, "unsupported parameter: top_k"));
+        assert!(!is_context_length_error(
+            400,
+            "invalid tool schema: missing 'type'"
+        ));
+        assert!(!is_context_length_error(
+            400,
+            "unsupported parameter: top_k"
+        ));
         // Fraza pasuje, ale status nie jest błędem walidacji żądania.
-        assert!(!is_context_length_error(500, "maximum context length exceeded"));
+        assert!(!is_context_length_error(
+            500,
+            "maximum context length exceeded"
+        ));
     }
 
     #[test]

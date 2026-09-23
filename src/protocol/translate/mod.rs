@@ -19,7 +19,10 @@ pub fn matched_stop_sequence(
         return None;
     }
     let hit = provider_stop_reason?.as_str()?;
-    stop_sequences.iter().find(|sequence| sequence.as_str() == hit).cloned()
+    stop_sequences
+        .iter()
+        .find(|sequence| sequence.as_str() == hit)
+        .cloned()
 }
 
 /// Mapowanie `finish_reason` (OpenAI) → `stop_reason` (Anthropic).

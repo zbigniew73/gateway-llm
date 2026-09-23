@@ -50,7 +50,10 @@ impl RateLimiter {
     pub fn new(providers: &HashMap<String, ProviderConfig>) -> Self {
         let buckets = providers
             .iter()
-            .filter_map(|(name, cfg)| cfg.rpm.map(|rpm| (name.clone(), Mutex::new(Bucket::new(rpm)))))
+            .filter_map(|(name, cfg)| {
+                cfg.rpm
+                    .map(|rpm| (name.clone(), Mutex::new(Bucket::new(rpm))))
+            })
             .collect();
         Self { buckets }
     }
@@ -127,7 +130,10 @@ mod tests {
         assert!(limiter.try_acquire("p"));
         assert!(limiter.try_acquire("p"));
         assert!(limiter.try_acquire("p"));
-        assert!(!limiter.try_acquire("p"), "4. żądanie musi przekroczyć limit 3 RPM");
+        assert!(
+            !limiter.try_acquire("p"),
+            "4. żądanie musi przekroczyć limit 3 RPM"
+        );
         assert!(!limiter.has_capacity("p"));
     }
 
@@ -149,9 +155,15 @@ mod tests {
         for _ in 0..600 {
             assert!(limiter.try_acquire("p"));
         }
-        assert!(!limiter.try_acquire("p"), "kubełek 600 RPM powinien być pusty po 600 zużyciach");
+        assert!(
+            !limiter.try_acquire("p"),
+            "kubełek 600 RPM powinien być pusty po 600 zużyciach"
+        );
 
         sleep(Duration::from_millis(150));
-        assert!(limiter.try_acquire("p"), "po ~150ms przy 600 RPM powinien odnowić się token");
+        assert!(
+            limiter.try_acquire("p"),
+            "po ~150ms przy 600 RPM powinien odnowić się token"
+        );
     }
 }

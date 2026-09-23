@@ -32,7 +32,10 @@ pub async fn require_api_key(
             next.run(request).await
         }
         Some(_) => {
-            tracing::warn!(path = request.uri().path(), "odrzucono: niepoprawny klucz API");
+            tracing::warn!(
+                path = request.uri().path(),
+                "odrzucono: niepoprawny klucz API"
+            );
             AppError::Unauthorized.into_response_with(style)
         }
         None => {

@@ -16,8 +16,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 const OK_BODY: &str = r#"{"id":"x","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
-const CONTEXT_400: &str =
-    r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, you requested 40000 tokens."}}"#;
+const CONTEXT_400: &str = r#"{"error":{"message":"This model's maximum context length is 32768 tokens. However, you requested 40000 tokens."}}"#;
 const GENERIC_400: &str = r#"{"error":{"message":"invalid tool schema: missing 'type'"}}"#;
 
 /// Serwer odpowiadający zawsze tym samym statusem i treścią; liczy żądania.
@@ -127,7 +126,11 @@ async fn generic_400_stops_within_alias() {
 
     let result = router.dispatch("a", &body(), false, false, "test").await;
     assert!(result.is_err());
-    assert_eq!(hits2.load(Ordering::SeqCst), 0, "zły request nie może iść dalej");
+    assert_eq!(
+        hits2.load(Ordering::SeqCst),
+        0,
+        "zły request nie może iść dalej"
+    );
 }
 
 #[tokio::test]
@@ -184,7 +187,11 @@ async fn generic_400_does_not_trigger_fallback_model() {
 
     let result = router.dispatch("a", &body(), false, false, "test").await;
     assert!(result.is_err());
-    assert_eq!(hits2.load(Ordering::SeqCst), 0, "fallback_model nie naprawi złego requestu");
+    assert_eq!(
+        hits2.load(Ordering::SeqCst),
+        0,
+        "fallback_model nie naprawi złego requestu"
+    );
 }
 
 #[tokio::test]
@@ -210,7 +217,10 @@ async fn deployment_over_rpm_limit_is_still_tried_as_last_resort() {
     );
 
     // 1. żądanie zużywa jedyny token p1.
-    let first = router.dispatch("a", &body(), false, false, "t1").await.unwrap();
+    let first = router
+        .dispatch("a", &body(), false, false, "t1")
+        .await
+        .unwrap();
     assert_eq!(first.provider, "p1");
 
     // 2. żądanie: p1 bez wolnego limitu idzie na koniec, p2 zwraca 500 —
@@ -220,6 +230,10 @@ async fn deployment_over_rpm_limit_is_still_tried_as_last_resort() {
         .await
         .expect("deployment bez wolnego limitu to ostatnia deska ratunku");
     assert_eq!(second.provider, "p1");
-    assert_eq!(hits2.load(Ordering::SeqCst), 1, "najpierw deployment z wolnym limitem");
+    assert_eq!(
+        hits2.load(Ordering::SeqCst),
+        1,
+        "najpierw deployment z wolnym limitem"
+    );
     assert_eq!(hits1.load(Ordering::SeqCst), 2);
 }

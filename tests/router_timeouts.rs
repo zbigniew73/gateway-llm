@@ -94,5 +94,8 @@ async fn non_stream_timeout_still_bounds_the_request() {
     let router = Router::new(Arc::new(config(port, env, 1, 1))).unwrap();
 
     let result = router.dispatch("m", &body(), false, false, "test").await;
-    assert!(result.is_err(), "odpowiedź po 3 s musi przekroczyć non_stream_timeout = 1 s");
+    assert!(
+        result.is_err(),
+        "odpowiedź po 3 s musi przekroczyć non_stream_timeout = 1 s"
+    );
 }

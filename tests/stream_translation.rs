@@ -171,7 +171,10 @@ fn length_finish_reason_maps_to_max_tokens() {
         .iter()
         .find(|event| event.event == "message_delta")
         .expect("message_delta musi wystąpić");
-    assert_eq!(field(message_delta, &["delta", "stop_reason"]), "max_tokens");
+    assert_eq!(
+        field(message_delta, &["delta", "stop_reason"]),
+        "max_tokens"
+    );
 }
 
 #[test]
@@ -238,7 +241,10 @@ fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
     assert_eq!(field(block_start, &["index"]), 0);
     assert_eq!(field(block_start, &["content_block", "type"]), "tool_use");
     assert_eq!(field(block_start, &["content_block", "id"]), "call_abc123");
-    assert_eq!(field(block_start, &["content_block", "name"]), "get_weather");
+    assert_eq!(
+        field(block_start, &["content_block", "name"]),
+        "get_weather"
+    );
     assert_eq!(field(block_start, &["content_block", "input"]), &json!({}));
     assert_eq!(state.anthropic_index_for_tool(0), Some(0));
 
@@ -251,8 +257,12 @@ fn tool_use_stream_maps_indices_and_rebuilds_valid_json() {
     // Sklejone fragmenty muszą tworzyć poprawny JSON.
     let joined = concatenated_partial_json(&events, 0);
     assert_eq!(joined, r#"{"location":"San Francisco","unit":"celsius"}"#);
-    let parsed: Value = serde_json::from_str(&joined).expect("partial_json musi sklejać się do JSON");
-    assert_eq!(parsed, json!({"location": "San Francisco", "unit": "celsius"}));
+    let parsed: Value =
+        serde_json::from_str(&joined).expect("partial_json musi sklejać się do JSON");
+    assert_eq!(
+        parsed,
+        json!({"location": "San Francisco", "unit": "celsius"})
+    );
 
     // Bufor stanu widzi dokładnie to samo.
     assert_eq!(state.tool_arguments(0), Some(joined.as_str()));
@@ -365,10 +375,7 @@ fn text_then_two_tool_calls_get_separate_anthropic_indices() {
     assert_eq!(state.tool_arguments(0), Some(first.as_str()));
     assert_eq!(state.tool_arguments(1), Some(second.as_str()));
 
-    assert_eq!(
-        field(&events[11], &["delta", "stop_reason"]),
-        "tool_use"
-    );
+    assert_eq!(field(&events[11], &["delta", "stop_reason"]), "tool_use");
 }
 
 #[test]
@@ -410,7 +417,10 @@ fn text_after_tool_call_opens_a_new_text_block() {
 fn finish_without_any_chunk_still_emits_full_envelope() {
     let mut state = StreamState::new("claude-sonnet-4");
     let events = state.finish();
-    assert_eq!(names(&events), vec!["message_start", "message_delta", "message_stop"]);
+    assert_eq!(
+        names(&events),
+        vec!["message_start", "message_delta", "message_stop"]
+    );
     assert!(!state.message_id().is_empty());
 }
 
@@ -516,7 +526,11 @@ fn reasoning_becomes_thinking_block_before_text_when_enabled() {
 fn reasoning_is_dropped_when_thinking_not_requested() {
     let events = run_state(
         StreamState::new("m"),
-        vec![reasoning_chunk("reasoning_content", "sekret"), text_chunk("4"), finish_chunk("stop")],
+        vec![
+            reasoning_chunk("reasoning_content", "sekret"),
+            text_chunk("4"),
+            finish_chunk("stop"),
+        ],
     );
     assert_eq!(
         names(&events),
@@ -536,7 +550,11 @@ fn reasoning_is_dropped_when_thinking_not_requested() {
 fn openrouter_reasoning_delta_is_supported() {
     let events = run_state(
         StreamState::new("m").with_thinking(true),
-        vec![reasoning_chunk("reasoning", "myślę"), text_chunk("ok"), finish_chunk("stop")],
+        vec![
+            reasoning_chunk("reasoning", "myślę"),
+            text_chunk("ok"),
+            finish_chunk("stop"),
+        ],
     );
     assert_eq!(field(&events[1], &["content_block", "type"]), "thinking");
     assert_eq!(field(&events[2], &["delta", "thinking"]), "myślę");
@@ -559,7 +577,10 @@ fn stop_sequence_is_reported_when_provider_names_it() {
         vec![text_chunk("abc"), stop, usage],
     );
     let message_delta = events.iter().find(|e| e.event == "message_delta").unwrap();
-    assert_eq!(field(message_delta, &["delta", "stop_reason"]), "stop_sequence");
+    assert_eq!(
+        field(message_delta, &["delta", "stop_reason"]),
+        "stop_sequence"
+    );
     assert_eq!(field(message_delta, &["delta", "stop_sequence"]), "###");
 }
 
@@ -575,7 +596,10 @@ fn stop_reason_outside_client_sequences_is_plain_end_turn() {
     );
     let message_delta = events.iter().find(|e| e.event == "message_delta").unwrap();
     assert_eq!(field(message_delta, &["delta", "stop_reason"]), "end_turn");
-    assert_eq!(field(message_delta, &["delta", "stop_sequence"]), &Value::Null);
+    assert_eq!(
+        field(message_delta, &["delta", "stop_sequence"]),
+        &Value::Null
+    );
 }
 
 #[test]
@@ -588,5 +612,8 @@ fn empty_content_deltas_do_not_open_blocks() {
         finish_chunk("stop"),
     ]);
 
-    assert_eq!(names(&events), vec!["message_start", "message_delta", "message_stop"]);
+    assert_eq!(
+        names(&events),
+        vec!["message_start", "message_delta", "message_stop"]
+    );
 }
