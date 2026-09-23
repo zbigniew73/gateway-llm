@@ -80,7 +80,7 @@ pub async fn handle(
     // Decyzja o fallbacku zapadła już w `dispatch()`; od tego momentu tylko
     // tłumaczymy strumień. Timeout bezczynności pilnujemy per-event, bo
     // request-level timeout reqwest obejmowałby całą (długą) odpowiedź.
-    let idle_timeout = state.config.request_timeout();
+    let idle_timeout = state.config.stream_idle_timeout();
     let request_id_for_stream = request_id.clone();
 
     let events = async_stream::stream! {

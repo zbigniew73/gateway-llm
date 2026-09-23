@@ -124,7 +124,7 @@ impl Router {
             let timeout = if stream {
                 None
             } else {
-                Some(self.config.request_timeout())
+                Some(self.config.connect_timeout())
             };
 
             attempts += 1;
@@ -135,10 +135,12 @@ impl Router {
                 providers::build_request(&self.client, provider, &api_key, &upstream_body, timeout);
 
             // Dla streamu timeout request-level jest wyłączony, więc pilnujemy
-            // przynajmniej fazy nawiązania połączenia i nagłówków.
+            // przynajmniej fazy nawiązania połączenia i nagłówków (dalsze ciszę
+            // w trakcie streamu pilnuje już handler `/v1/messages`, osobnym
+            // `stream_idle_timeout_seconds`).
             let send = async {
                 if stream {
-                    match tokio::time::timeout(self.config.request_timeout(), request.send()).await
+                    match tokio::time::timeout(self.config.connect_timeout(), request.send()).await
                     {
                         Ok(result) => result.map_err(|err| err.to_string()),
                         Err(_) => Err("przekroczono czas oczekiwania na nagłówki odpowiedzi"

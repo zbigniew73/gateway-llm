@@ -114,7 +114,8 @@ mod tests {
 
     fn routing(threshold: u32) -> RoutingConfig {
         RoutingConfig {
-            request_timeout_seconds: 120,
+            connect_timeout_seconds: 20,
+            stream_idle_timeout_seconds: 90,
             error_threshold: threshold,
             error_window_seconds: 120,
             cooldown_seconds: 60,

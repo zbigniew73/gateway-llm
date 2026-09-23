@@ -60,9 +60,17 @@ impl Default for ServerConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoutingConfig {
-    /// Timeout pojedynczego żądania non-stream (sekundy).
-    #[serde(default = "default_request_timeout")]
-    pub request_timeout_seconds: u64,
+    /// Ile najdłużej czekamy na START odpowiedzi providera (sekundy): dla żądań
+    /// non-stream to pełny timeout całego żądania (reqwest `.timeout()`), dla
+    /// streamu — tylko czas do nagłówków, zanim zacznie działać
+    /// `stream_idle_timeout_seconds`.
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_seconds: u64,
+    /// Ile najdłużej może trwać CISZA między kolejnymi zdarzeniami SSE w już
+    /// trwającym streamie, zanim uznamy providera za martwego (sekundy).
+    /// Nie dotyczy żądań non-stream.
+    #[serde(default = "default_stream_idle_timeout")]
+    pub stream_idle_timeout_seconds: u64,
     /// Liczba błędów w oknie, po której deployment trafia do cooldownu.
     #[serde(default = "default_error_threshold")]
     pub error_threshold: u32,
@@ -77,7 +85,8 @@ pub struct RoutingConfig {
 impl Default for RoutingConfig {
     fn default() -> Self {
         Self {
-            request_timeout_seconds: default_request_timeout(),
+            connect_timeout_seconds: default_connect_timeout(),
+            stream_idle_timeout_seconds: default_stream_idle_timeout(),
             error_threshold: default_error_threshold(),
             error_window_seconds: default_error_window(),
             cooldown_seconds: default_cooldown(),
@@ -285,8 +294,12 @@ impl Config {
         self.providers.get(name)
     }
 
-    pub fn request_timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.routing.request_timeout_seconds.max(1))
+    pub fn connect_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.routing.connect_timeout_seconds.max(1))
+    }
+
+    pub fn stream_idle_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.routing.stream_idle_timeout_seconds.max(1))
     }
 }
 
@@ -298,8 +311,12 @@ fn default_port() -> u16 {
     4444
 }
 
-fn default_request_timeout() -> u64 {
-    120
+fn default_connect_timeout() -> u64 {
+    20
+}
+
+fn default_stream_idle_timeout() -> u64 {
+    90
 }
 
 fn default_error_threshold() -> u32 {

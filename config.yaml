@@ -3,7 +3,8 @@ server:
   port: 4444
 
 routing:
-  request_timeout_seconds: 120
+  connect_timeout_seconds: 20
+  stream_idle_timeout_seconds: 90
   error_threshold: 3
   error_window_seconds: 120
   cooldown_seconds: 60
