@@ -40,7 +40,7 @@ pub async fn handle(State(state): State<AppState>, body: Bytes) -> Result<Respon
 
     let dispatched = state
         .router
-        .dispatch(&alias, &payload, stream, &request_id)
+        .dispatch(&alias, &payload, stream, false, &request_id)
         .await?;
 
     let upstream = dispatched.response;

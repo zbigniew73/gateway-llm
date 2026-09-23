@@ -106,6 +106,7 @@ mod tests {
                 base_url: "https://example.test".to_string(),
                 chat_path: "/chat/completions".to_string(),
                 rpm: Some(rpm),
+                stream_usage: false,
             },
         );
         map

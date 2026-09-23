@@ -9,23 +9,29 @@ routing:
   error_window_seconds: 120
   cooldown_seconds: 60
 
+# stream_usage: czy prosić o liczbę tokenów w streamie (/v1/messages, Claude Code).
+# Włączaj tylko dla providerów, którzy obsługują stream_options — inaczej 400.
 providers:
   openrouter:
     base_url: https://openrouter.ai/api/v1
     chat_path: /chat/completions
     rpm: 20
+    stream_usage: true
   novita:
     base_url: https://api.novita.ai/openai
     chat_path: /v1/chat/completions
     rpm: 60
+    stream_usage: true
   infron:
     base_url: https://llm.onerouter.pro
     chat_path: /v1/chat/completions
     rpm: 60
+    stream_usage: true
   nvidia:
     base_url: https://integrate.api.nvidia.com/v1
     chat_path: /chat/completions
     rpm: 40
+    stream_usage: false   # niepotwierdzone — LiteLLM też tego NIM nie wysyła
 
 model_list:
   # fallback_model: jeśli WSZYSTKIE deploymenty claude-sonnet-4 (obie próby

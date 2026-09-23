@@ -81,6 +81,8 @@ providers:
     rpm: 20   # np. limit darmowych modeli OpenRoutera
 ```
 
+Pole `stream_usage: true` na providerze sprawia, że przy streamingu na `/v1/messages` gateway prosi providera o liczbę tokenów (`stream_options.include_usage`) i przekazuje ją Claude Code (potrzebna m.in. do automatycznego kompaktowania kontekstu). Domyślnie wyłączone — włączaj tylko dla providerów, którzy ten parametr obsługują, bo inny może odrzucić żądanie z błędem 400. Passthrough `/v1/chat/completions` nie jest tym objęty.
+
 Opcjonalne pole `fallback_model: <inny-model_name>` na wpisie aliasu pozwala przejść na CAŁKIEM INNY alias, gdy wyczerpią się WSZYSTKIE `deployments` bieżącego (a nie tylko pojedynczy deployment — to już obsługuje `order`):
 
 ```yaml

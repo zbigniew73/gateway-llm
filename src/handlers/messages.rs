@@ -53,7 +53,7 @@ pub async fn handle(
 
     let dispatched = state
         .router
-        .dispatch(&alias, &payload, stream, &request_id)
+        .dispatch(&alias, &payload, stream, true, &request_id)
         .await?;
 
     let upstream = dispatched.response;

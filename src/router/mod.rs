@@ -60,11 +60,15 @@ impl Router {
     /// w configu) i próbuje od nowa na tamtym aliasie. Konfiguracja jest
     /// walidowana pod kątem cykli przy starcie (`Config::validate`), ale
     /// `visited` to dodatkowe zabezpieczenie w runtime.
+    ///
+    /// `stream_usage`: czy wywołujący chce usage w streamie. Faktycznie
+    /// wysyłamy `stream_options` tylko providerom z `stream_usage: true`.
     pub async fn dispatch(
         &self,
         alias: &str,
         body: &Value,
         stream: bool,
+        stream_usage: bool,
         request_id: &str,
     ) -> Result<Dispatched, AppError> {
         let mut current = alias.to_string();
@@ -80,7 +84,10 @@ impl Router {
                 return Err(AppError::NoDeploymentAvailable(alias.to_string()));
             }
 
-            match self.dispatch_one(&current, body, stream, request_id).await {
+            match self
+                .dispatch_one(&current, body, stream, stream_usage, request_id)
+                .await
+            {
                 Ok(dispatched) => return Ok(dispatched),
                 Err(err) => {
                     let fallback = self
@@ -116,6 +123,7 @@ impl Router {
         alias: &str,
         body: &Value,
         stream: bool,
+        stream_usage: bool,
         request_id: &str,
     ) -> Result<Dispatched, AppError> {
         let entry = self
@@ -172,15 +180,12 @@ impl Router {
                 continue;
             };
 
-            let mut upstream_body = body.clone();
-            if let Some(object) = upstream_body.as_object_mut() {
-                object.insert("model".to_string(), Value::String(deployment.model.clone()));
-                object.insert("stream".to_string(), Value::Bool(stream));
-            } else {
-                return Err(AppError::bad_request(
-                    "ciało żądania musi być obiektem JSON",
-                ));
-            }
+            let upstream_body = build_upstream_body(
+                body,
+                &deployment.model,
+                stream,
+                stream_usage && provider.stream_usage,
+            )?;
 
             let timeout = if stream {
                 None
@@ -304,6 +309,29 @@ impl Router {
     }
 }
 
+/// Body wysyłane do konkretnego deploymentu: podmieniony `model` i `stream`,
+/// a `stream_options.include_usage` tylko gdy prosimy o usage w streamie.
+fn build_upstream_body(
+    body: &Value,
+    model: &str,
+    stream: bool,
+    include_usage: bool,
+) -> Result<Value, AppError> {
+    let mut upstream = body.clone();
+    let object = upstream
+        .as_object_mut()
+        .ok_or_else(|| AppError::bad_request("ciało żądania musi być obiektem JSON"))?;
+    object.insert("model".to_string(), Value::String(model.to_string()));
+    object.insert("stream".to_string(), Value::Bool(stream));
+    if stream && include_usage {
+        object.insert(
+            "stream_options".to_string(),
+            serde_json::json!({ "include_usage": true }),
+        );
+    }
+    Ok(upstream)
+}
+
 /// Czy przy takim kodzie HTTP warto spróbować kolejnego deploymentu.
 fn is_retryable(status: u16) -> bool {
     matches!(status, 401 | 402 | 403 | 404 | 408 | 409 | 413 | 429) || status >= 500
@@ -311,7 +339,30 @@ fn is_retryable(status: u16) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_retryable;
+    use super::{build_upstream_body, is_retryable};
+    use serde_json::json;
+
+    #[test]
+    fn stream_options_added_only_for_stream_with_usage_enabled() {
+        let body = json!({"model": "alias", "messages": []});
+
+        let with = build_upstream_body(&body, "up/model", true, true).unwrap();
+        assert_eq!(with["model"], "up/model");
+        assert_eq!(with["stream"], true);
+        assert_eq!(with["stream_options"], json!({"include_usage": true}));
+
+        let flag_off = build_upstream_body(&body, "up/model", true, false).unwrap();
+        assert!(flag_off.get("stream_options").is_none());
+
+        let non_stream = build_upstream_body(&body, "up/model", false, true).unwrap();
+        assert!(non_stream.get("stream_options").is_none());
+        assert_eq!(non_stream["stream"], false);
+    }
+
+    #[test]
+    fn non_object_body_is_rejected() {
+        assert!(build_upstream_body(&json!([1, 2]), "m", true, true).is_err());
+    }
 
     #[test]
     fn client_errors_are_not_retried_except_auth_and_rate_limits() {

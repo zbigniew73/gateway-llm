@@ -5,7 +5,7 @@
 //! ```text
 //! message_start
 //!   content_block_start  → N × content_block_delta → content_block_stop   (na blok)
-//! message_delta (stop_reason + usage.output_tokens)
+//! message_delta (stop_reason + usage.output_tokens [+ usage.input_tokens])
 //! message_stop
 //! ```
 //!
@@ -205,12 +205,20 @@ impl StreamState {
             map_stop_reason(self.finish_reason.as_deref())
         };
 
+        // OpenAI podaje usage dopiero na końcu streamu, więc `input_tokens`
+        // z `message_start` to zawsze placeholder 0 — prawdziwą wartość
+        // przekazujemy tutaj (tylko gdy ją znamy, żeby nie nadpisać zerem).
+        let mut usage = json!({ "output_tokens": self.output_tokens.unwrap_or(0) });
+        if let Some(input_tokens) = self.input_tokens {
+            usage["input_tokens"] = json!(input_tokens);
+        }
+
         events.push(SseEvent::new(
             "message_delta",
             json!({
                 "type": "message_delta",
                 "delta": { "stop_reason": stop_reason, "stop_sequence": Value::Null },
-                "usage": { "output_tokens": self.output_tokens.unwrap_or(0) }
+                "usage": usage
             }),
         ));
         events.push(SseEvent::new(

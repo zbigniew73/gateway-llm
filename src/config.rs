@@ -105,6 +105,12 @@ pub struct ProviderConfig {
     /// indziej równolegle).
     #[serde(default)]
     pub rpm: Option<u32>,
+    /// Czy dla streamu na ścieżce `/v1/messages` prosić providera o usage
+    /// (`stream_options.include_usage`) — bez tego Claude Code nie zna
+    /// liczby tokenów. Domyślnie wyłączone: provider, który nie obsługuje
+    /// tego parametru, mógłby odrzucić żądanie (400).
+    #[serde(default)]
+    pub stream_usage: bool,
 }
 
 impl ProviderConfig {
@@ -401,6 +407,7 @@ mod tests {
             base_url: "https://example.test".to_string(),
             chat_path: "/chat/completions".to_string(),
             rpm: None,
+            stream_usage: false,
         }
     }
 

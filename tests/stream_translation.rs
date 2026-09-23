@@ -188,6 +188,21 @@ fn usage_from_final_chunk_is_reported() {
         .find(|event| event.event == "message_delta")
         .expect("message_delta musi wystąpić");
     assert_eq!(field(message_delta, &["usage", "output_tokens"]), 7);
+    // input_tokens znamy dopiero z końcowego chunka — musi trafić do message_delta.
+    assert_eq!(field(message_delta, &["usage", "input_tokens"]), 11);
+}
+
+#[test]
+fn input_tokens_are_omitted_when_provider_sent_no_usage() {
+    let (_state, events) = run(vec![text_chunk("hi"), finish_chunk("stop")]);
+    let message_delta = events
+        .iter()
+        .find(|event| event.event == "message_delta")
+        .expect("message_delta musi wystąpić");
+    assert!(
+        message_delta.data["usage"].get("input_tokens").is_none(),
+        "bez usage od providera nie wolno nadpisywać input_tokens zerem"
+    );
 }
 
 // ---------------------------------------------------------------------------
