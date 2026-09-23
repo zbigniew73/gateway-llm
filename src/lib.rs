@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod config;
+pub mod doctor;
 pub mod error;
 pub mod handlers;
 pub mod protocol;

@@ -7,9 +7,41 @@ use gateway_llm::router::Router;
 use gateway_llm::state::AppState;
 use tracing_subscriber::EnvFilter;
 
+const USAGE: &str = "użycie: gateway-llm [doctor [--providers]]
+
+  (bez argumentów)     uruchamia gateway
+  doctor               sprawdza instalację, konfigurację i działającą usługę
+  doctor --providers   dodatkowo testuje każdy deployment jednym małym żądaniem";
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    let _ = dotenvy::dotenv();
+    let env_file = dotenvy::dotenv().ok();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("doctor") => {
+            let flags = &args[1..];
+            if let Some(unknown) = flags.iter().find(|flag| *flag != "--providers") {
+                eprintln!("nieznana opcja doctor: {unknown}\n\n{USAGE}");
+                return ExitCode::from(2);
+            }
+            let check_providers = !flags.is_empty();
+            return if gateway_llm::doctor::run(env_file.as_deref(), check_providers).await {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            };
+        }
+        Some("-h" | "--help" | "help") => {
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        Some(other) => {
+            eprintln!("nieznana komenda: {other}\n\n{USAGE}");
+            return ExitCode::from(2);
+        }
+    }
 
     init_tracing();
 

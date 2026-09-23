@@ -16,7 +16,7 @@
 
 ## Polski
 
-Lekki gateway LLM napisany w Rust. Wystawia API zgodne z OpenAI i Anthropic na jednym porcie i kieruje żądania do backendów OpenRouter, Novita.ai, Infron.ai (OneRouter) oraz NVIDIA NIM.
+Lekki gateway LLM napisany w Rust. Wystawia API zgodne z OpenAI i Anthropic na jednym porcie i kieruje żądania do różnych backendów.
 
 ### Funkcje
 
@@ -26,6 +26,7 @@ Lekki gateway LLM napisany w Rust. Wystawia API zgodne z OpenAI i Anthropic na j
 - **Zgodność z Claude Code:** liczba tokenów w streamingu (`stream_usage`) i szacunkowy endpoint `count_tokens`.
 - **Bezpieczeństwo:** autoryzacja jednym kluczem (`x-api-key` lub `Authorization: Bearer`), domyślny nasłuch tylko na `127.0.0.1`.
 - **Instalacja ze źródeł** jako usługa `systemd --user` — działa na dowolnej architekturze CPU.
+- **Diagnostyka** instalacji i providerów: `gateway-llm doctor`.
 
 ### Endpointy
 
@@ -169,6 +170,21 @@ api_key:  <GATEWAY_API_KEY>
 model:    <alias z config.yaml>
 ```
 
+### Diagnostyka
+
+```bash
+cd ~/gateway-llm
+./target/release/gateway-llm doctor
+./target/release/gateway-llm doctor --providers
+```
+
+| Tryb | Co sprawdza |
+|---|---|
+| `doctor` | `.env` i jego uprawnienia, poprawność `config.yaml`, `GATEWAY_API_KEY` i klucze providerów, usługę systemd i `linger`, odpowiedź `/healthz`, czy działająca usługa akceptuje klucz z `.env` |
+| `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz obsługę `stream_options` u każdego providera w porównaniu z `stream_usage` w konfiguracji |
+
+Wynik to lista `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` z podpowiedzią naprawy. Kod wyjścia `0` oznacza brak błędów `FAIL`.
+
 ### Zarządzanie usługą
 
 ```bash
@@ -196,16 +212,11 @@ cargo test
 ```
 
 CI (GitHub Actions) uruchamia te same kroki przy każdym pushu na `main` i w pull requestach. Testy nie wymagają dostępu do sieci ani kluczy API.
-
-### Licencja
-
-Darmowa, na licencji [MIT](LICENSE) — do użytku prywatnego i komercyjnego.
-
 ---
 
 ## English
 
-A lightweight LLM gateway written in Rust. It exposes OpenAI- and Anthropic-compatible APIs on a single port and routes requests to OpenRouter, Novita.ai, Infron.ai (OneRouter) and NVIDIA NIM backends.
+A lightweight LLM gateway written in Rust. It exposes OpenAI- and Anthropic-compatible APIs on a single port and routes requests to multiple backends.
 
 ### Features
 
@@ -215,6 +226,7 @@ A lightweight LLM gateway written in Rust. It exposes OpenAI- and Anthropic-comp
 - **Claude Code compatibility:** token usage in streaming responses (`stream_usage`) and an estimated `count_tokens` endpoint.
 - **Security:** single-key authentication (`x-api-key` or `Authorization: Bearer`), listens on `127.0.0.1` by default.
 - **Built from source** and installed as a `systemd --user` service — runs on any CPU architecture.
+- **Diagnostics** for the installation and providers: `gateway-llm doctor`.
 
 ### Endpoints
 
@@ -319,6 +331,21 @@ api_key:  <GATEWAY_API_KEY>
 model:    <alias from config.yaml>
 ```
 
+### Diagnostics
+
+```bash
+cd ~/gateway-llm
+./target/release/gateway-llm doctor
+./target/release/gateway-llm doctor --providers
+```
+
+| Mode | Checks |
+|---|---|
+| `doctor` | `.env` and its permissions, `config.yaml` validity, `GATEWAY_API_KEY` and provider keys, the systemd service and `linger`, the `/healthz` response, whether the running service accepts the key from `.env` |
+| `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and `stream_options` support for each provider, compared with `stream_usage` in the configuration |
+
+The output lists `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` lines with a fix hint. Exit code `0` means no `FAIL`.
+
 ### Service management
 
 ```bash
@@ -346,7 +373,3 @@ cargo test
 ```
 
 CI (GitHub Actions) runs the same steps on every push to `main` and on pull requests. Tests need neither network access nor API keys.
-
-### License
-
-Free, under the [MIT](LICENSE) license — for personal and commercial use.

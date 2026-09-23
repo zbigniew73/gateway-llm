@@ -60,3 +60,4 @@ fi
 echo "==> gotowe."
 echo "    status: systemctl --user status $SERVICE_NAME"
 echo "    logi:   journalctl --user -u $SERVICE_NAME -f"
+echo "    diagnostyka: cd $SCRIPT_DIR && ./target/release/gateway-llm doctor --providers"
