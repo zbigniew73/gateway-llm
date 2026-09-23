@@ -38,6 +38,7 @@ impl Router {
     pub fn new(config: Arc<Config>) -> Result<Self, AppError> {
         let client = reqwest::Client::builder()
             .user_agent(concat!("gateway-llm/", env!("CARGO_PKG_VERSION")))
+            .connect_timeout(config.connect_timeout())
             .build()
             .map_err(|err| AppError::internal(format!("nie udało się zbudować klienta HTTP: {err}")))?;
 
@@ -190,7 +191,7 @@ impl Router {
             let timeout = if stream {
                 None
             } else {
-                Some(self.config.connect_timeout())
+                Some(self.config.non_stream_timeout())
             };
 
             attempts += 1;

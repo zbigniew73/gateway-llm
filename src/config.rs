@@ -60,10 +60,9 @@ impl Default for ServerConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RoutingConfig {
-    /// Ile najdłużej czekamy na START odpowiedzi providera (sekundy): dla żądań
-    /// non-stream to pełny timeout całego żądania (reqwest `.timeout()`), dla
-    /// streamu — tylko czas do nagłówków, zanim zacznie działać
-    /// `stream_idle_timeout_seconds`.
+    /// Szybkie wykrycie martwego providera (sekundy): limit na nawiązanie
+    /// połączenia TCP/TLS (każde żądanie), a dla streamu także na nagłówki
+    /// odpowiedzi, zanim zacznie działać `stream_idle_timeout_seconds`.
     #[serde(default = "default_connect_timeout")]
     pub connect_timeout_seconds: u64,
     /// Ile najdłużej może trwać CISZA między kolejnymi zdarzeniami SSE w już
@@ -71,6 +70,11 @@ pub struct RoutingConfig {
     /// Nie dotyczy żądań non-stream.
     #[serde(default = "default_stream_idle_timeout")]
     pub stream_idle_timeout_seconds: u64,
+    /// Pełny limit czasu żądania non-stream (sekundy). Musi być hojny: przy
+    /// non-stream provider zwykle odpowiada dopiero po wygenerowaniu CAŁEJ
+    /// odpowiedzi, więc krótki limit ucinałby poprawne, długie generacje.
+    #[serde(default = "default_non_stream_timeout")]
+    pub non_stream_timeout_seconds: u64,
     /// Liczba błędów w oknie, po której deployment trafia do cooldownu.
     #[serde(default = "default_error_threshold")]
     pub error_threshold: u32,
@@ -87,6 +91,7 @@ impl Default for RoutingConfig {
         Self {
             connect_timeout_seconds: default_connect_timeout(),
             stream_idle_timeout_seconds: default_stream_idle_timeout(),
+            non_stream_timeout_seconds: default_non_stream_timeout(),
             error_threshold: default_error_threshold(),
             error_window_seconds: default_error_window(),
             cooldown_seconds: default_cooldown(),
@@ -368,6 +373,10 @@ impl Config {
     pub fn stream_idle_timeout(&self) -> std::time::Duration {
         std::time::Duration::from_secs(self.routing.stream_idle_timeout_seconds.max(1))
     }
+
+    pub fn non_stream_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.routing.non_stream_timeout_seconds.max(1))
+    }
 }
 
 fn default_host() -> String {
@@ -384,6 +393,10 @@ fn default_connect_timeout() -> u64 {
 
 fn default_stream_idle_timeout() -> u64 {
     90
+}
+
+fn default_non_stream_timeout() -> u64 {
+    300
 }
 
 fn default_error_threshold() -> u32 {

@@ -116,6 +116,7 @@ mod tests {
         RoutingConfig {
             connect_timeout_seconds: 20,
             stream_idle_timeout_seconds: 90,
+            non_stream_timeout_seconds: 300,
             error_threshold: threshold,
             error_window_seconds: 120,
             cooldown_seconds: 60,

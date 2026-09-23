@@ -3,8 +3,9 @@ server:
   port: 4444
 
 routing:
-  connect_timeout_seconds: 20
-  stream_idle_timeout_seconds: 90
+  connect_timeout_seconds: 20       # TCP/TLS + nagłówki streamu (szybkie wykrycie martwego providera)
+  stream_idle_timeout_seconds: 90   # max cisza między zdarzeniami w trwającym streamie
+  non_stream_timeout_seconds: 300   # pełny czas odpowiedzi bez streamingu (cała generacja)
   error_threshold: 3
   error_window_seconds: 120
   cooldown_seconds: 60
