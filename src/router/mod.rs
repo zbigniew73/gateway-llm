@@ -214,8 +214,8 @@ impl Router {
                 providers::build_request(&self.client, provider, &api_key, &upstream_body, timeout);
 
             // Dla streamu timeout request-level jest wyłączony, więc pilnujemy
-            // przynajmniej fazy nawiązania połączenia i nagłówków (dalsze ciszę
-            // w trakcie streamu pilnuje już handler `/v1/messages`, osobnym
+            // przynajmniej fazy nawiązania połączenia i nagłówków (ciszę w
+            // trakcie streamu pilnują już handlery obu endpointów, osobnym
             // `stream_idle_timeout_seconds`).
             let send = async {
                 if stream {
