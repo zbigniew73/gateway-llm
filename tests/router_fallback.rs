@@ -42,6 +42,7 @@ fn provider(port: u16) -> ProviderConfig {
         chat_path: "/v1/chat/completions".to_string(),
         rpm: None,
         stream_usage: false,
+        headers: Default::default(),
     }
 }
 

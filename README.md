@@ -89,6 +89,9 @@ providers:
     chat_path: /chat/completions
     rpm: 20
     stream_usage: true
+    headers:
+      HTTP-Referer: https://github.com/zbigniew73/gateway-llm
+      X-OpenRouter-Title: Gateway LLM
   infron:
     base_url: https://llm.onerouter.pro
     chat_path: /v1/chat/completions
@@ -130,6 +133,7 @@ model_list:
 | `chat_path` | wymagane | Ścieżka endpointu chat completions |
 | `rpm` | brak limitu | Limit żądań na minutę wysyłanych przez gateway, wspólny dla wszystkich deploymentów providera |
 | `stream_usage` | `false` | Prosi o liczbę tokenów w streamie `/v1/messages`; włączać tylko dla providerów obsługujących `stream_options` |
+| `headers` | brak | Dodatkowe nagłówki HTTP wysyłane do providera, np. `HTTP-Referer` i `X-OpenRouter-Title`, dzięki którym OpenRouter pokazuje aplikację jako „Gateway LLM” zamiast „Unknown” |
 
 **`model_list`**
 
@@ -292,6 +296,7 @@ See the example in the Polish section above — the file format is the same.
 | `chat_path` | required | Chat completions endpoint path |
 | `rpm` | no limit | Requests per minute sent by the gateway, shared by all deployments of the provider |
 | `stream_usage` | `false` | Requests token usage in `/v1/messages` streams; enable only for providers that support `stream_options` |
+| `headers` | none | Extra HTTP headers sent to the provider, e.g. `HTTP-Referer` and `X-OpenRouter-Title`, so OpenRouter lists the app as "Gateway LLM" instead of "Unknown" |
 
 **`model_list`**
 

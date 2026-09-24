@@ -94,6 +94,7 @@ mod tests {
                 chat_path: "/chat/completions".to_string(),
                 rpm: Some(rpm),
                 stream_usage: false,
+                headers: Default::default(),
             },
         );
         map

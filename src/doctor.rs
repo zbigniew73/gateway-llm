@@ -550,6 +550,7 @@ mod tests {
             chat_path: "/v1/chat/completions".to_string(),
             rpm: None,
             stream_usage: false,
+            headers: Default::default(),
         }
     }
 

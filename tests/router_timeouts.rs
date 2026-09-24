@@ -39,6 +39,7 @@ fn config(port: u16, api_key_env: &str, connect: u64, non_stream: u64) -> Config
             chat_path: "/v1/chat/completions".to_string(),
             rpm: None,
             stream_usage: false,
+            headers: Default::default(),
         },
     );
     Config {

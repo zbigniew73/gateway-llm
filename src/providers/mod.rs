@@ -25,6 +25,10 @@ pub fn build_request(
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
         .json(body);
 
+    for (name, value) in &provider.headers {
+        builder = builder.header(name.as_str(), value.as_str());
+    }
+
     if let Some(timeout) = timeout {
         builder = builder.timeout(timeout);
     }
@@ -37,12 +41,43 @@ mod tests {
     use crate::config::ProviderConfig;
 
     #[test]
+    fn provider_headers_are_sent() {
+        let mut provider = ProviderConfig {
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            chat_path: "/chat/completions".to_string(),
+            rpm: None,
+            stream_usage: false,
+            headers: Default::default(),
+        };
+        provider.headers.insert(
+            "HTTP-Referer".to_string(),
+            "https://github.com/zbigniew73/gateway-llm".to_string(),
+        );
+        provider
+            .headers
+            .insert("X-OpenRouter-Title".to_string(), "Gateway LLM".to_string());
+
+        let client = reqwest::Client::new();
+        let request = super::build_request(&client, &provider, "key", &serde_json::json!({}), None)
+            .build()
+            .unwrap();
+        let headers = request.headers();
+        assert_eq!(
+            headers["http-referer"],
+            "https://github.com/zbigniew73/gateway-llm"
+        );
+        assert_eq!(headers["x-openrouter-title"], "Gateway LLM");
+        assert_eq!(headers["authorization"], "Bearer key");
+    }
+
+    #[test]
     fn chat_url_joins_without_double_slash() {
         let provider = ProviderConfig {
             base_url: "https://openrouter.ai/api/v1/".to_string(),
             chat_path: "/chat/completions".to_string(),
             rpm: None,
             stream_usage: false,
+            headers: Default::default(),
         };
         assert_eq!(
             provider.chat_url(),
@@ -54,6 +89,7 @@ mod tests {
             chat_path: "v1/chat/completions".to_string(),
             rpm: None,
             stream_usage: false,
+            headers: Default::default(),
         };
         assert_eq!(
             provider.chat_url(),

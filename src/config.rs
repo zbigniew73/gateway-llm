@@ -91,6 +91,8 @@ pub struct ProviderConfig {
     pub rpm: Option<u32>,
     #[serde(default)]
     pub stream_usage: bool,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
 }
 
 impl ProviderConfig {
@@ -206,6 +208,18 @@ impl Config {
                 return Err(ConfigError::Invalid(format!(
                     "provider '{name}': 'rpm' nie może wynosić 0 (usuń pole, żeby wyłączyć limit)"
                 )));
+            }
+            for (header, value) in &provider.headers {
+                if reqwest::header::HeaderName::from_bytes(header.as_bytes()).is_err() {
+                    return Err(ConfigError::Invalid(format!(
+                        "provider '{name}': niepoprawna nazwa nagłówka '{header}'"
+                    )));
+                }
+                if reqwest::header::HeaderValue::from_str(value).is_err() {
+                    return Err(ConfigError::Invalid(format!(
+                        "provider '{name}': niepoprawna wartość nagłówka '{header}'"
+                    )));
+                }
             }
         }
 
@@ -378,6 +392,7 @@ mod tests {
             chat_path: "/chat/completions".to_string(),
             rpm: None,
             stream_usage: false,
+            headers: Default::default(),
         }
     }
 
@@ -407,6 +422,25 @@ mod tests {
             deployments: vec![deployment()],
             fallback_model: fallback.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn invalid_provider_header_is_rejected() {
+        let mut config = config_with(vec![entry("main", None)]);
+        let provider = config.providers.get_mut("p").unwrap();
+        provider
+            .headers
+            .insert("X Bad Name".to_string(), "Gateway LLM".to_string());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("niepoprawna nazwa nagłówka"), "{err}");
+
+        let mut config = config_with(vec![entry("main", None)]);
+        let provider = config.providers.get_mut("p").unwrap();
+        provider
+            .headers
+            .insert("X-OpenRouter-Title".to_string(), "Gateway\nLLM".to_string());
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("niepoprawna wartość nagłówka"), "{err}");
     }
 
     #[test]

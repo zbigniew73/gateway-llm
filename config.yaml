@@ -16,6 +16,9 @@ providers:
     chat_path: /chat/completions
     rpm: 20
     stream_usage: true
+    headers:
+      HTTP-Referer: https://github.com/zbigniew73/gateway-llm
+      X-OpenRouter-Title: Gateway LLM
   novita:
     base_url: https://api.novita.ai/openai
     chat_path: /v1/chat/completions
