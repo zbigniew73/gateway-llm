@@ -165,7 +165,7 @@ impl Router {
                 body,
                 &deployment.model,
                 stream,
-                stream_usage && provider.stream_usage,
+                stream_usage && deployment.stream_usage,
             )
             .map_err(Failure::Terminal)?;
 

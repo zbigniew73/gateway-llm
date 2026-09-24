@@ -41,7 +41,6 @@ fn provider(port: u16) -> ProviderConfig {
         base_url: format!("http://127.0.0.1:{port}"),
         chat_path: "/v1/chat/completions".to_string(),
         rpm: None,
-        stream_usage: false,
         headers: Default::default(),
     }
 }
@@ -52,6 +51,7 @@ fn deployment(provider: &str, api_key_env: &str, order: i64) -> Deployment {
         model: format!("model-{provider}"),
         api_key_env: api_key_env.to_string(),
         order,
+        stream_usage: false,
     }
 }
 

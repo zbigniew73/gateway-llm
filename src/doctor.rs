@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::config::{Config, Deployment, ProviderConfig};
+use crate::config::{Config, ConfigError, Deployment, ProviderConfig};
 use crate::error::truncate;
 use crate::providers;
 
@@ -141,7 +141,12 @@ fn check_config(report: &mut Report) -> Option<Config> {
         Err(err) => {
             report.line(
                 Level::Fail,
-                format!("config: {err} — uruchom z katalogu gateway-llm albo ustaw GATEWAY_CONFIG"),
+                match err {
+                    ConfigError::Read { .. } => format!(
+                        "config: {err} — uruchom z katalogu gateway-llm albo ustaw GATEWAY_CONFIG"
+                    ),
+                    _ => format!("config: {err}"),
+                },
             );
             None
         }
@@ -373,12 +378,7 @@ async fn check_providers_live(report: &mut Report, config: &Config) {
                     Level::Ok,
                     format!("{label}: odpowiada ({} ms)", latency.as_millis()),
                 );
-                if !working
-                    .iter()
-                    .any(|seen| seen.provider == deployment.provider)
-                {
-                    working.push(deployment);
-                }
+                working.push(deployment);
             }
             Err(message) => report.line(Level::Fail, format!("{label}: {message}")),
         }
@@ -392,8 +392,11 @@ async fn check_providers_live(report: &mut Report, config: &Config) {
             continue;
         };
         let probe = probe_stream_usage(&client, provider, &deployment.model, &api_key).await;
-        let (level, message) = stream_usage_verdict(provider.stream_usage, &probe);
-        report.line(level, format!("{}: {message}", deployment.provider));
+        let (level, message) = stream_usage_verdict(deployment.stream_usage, &probe);
+        report.line(
+            level,
+            format!("{}/{}: {message}", deployment.provider, deployment.model),
+        );
     }
 }
 
@@ -549,7 +552,6 @@ mod tests {
             base_url: format!("http://127.0.0.1:{port}"),
             chat_path: "/v1/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         }
     }

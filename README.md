@@ -88,7 +88,6 @@ providers:
     base_url: https://openrouter.ai/api/v1
     chat_path: /chat/completions
     rpm: 20
-    stream_usage: true
     headers:
       HTTP-Referer: https://github.com/zbigniew73/gateway-llm
       X-OpenRouter-Title: Gateway LLM
@@ -96,7 +95,6 @@ providers:
     base_url: https://llm.onerouter.pro
     chat_path: /v1/chat/completions
     rpm: 60
-    stream_usage: true
 
 model_list:
   - model_name: cc-main
@@ -106,12 +104,14 @@ model_list:
         model: inclusionai/ling-3.0-flash-vl:free
         api_key_env: OPENROUTER_API_KEY
         order: 1
+        stream_usage: true
   - model_name: cc-fallback
     deployments:
       - provider: infron
         model: z-ai/glm-5.2
         api_key_env: INFRON_API_KEY
         order: 1
+        stream_usage: true
 ```
 
 **`routing`**
@@ -132,7 +132,6 @@ model_list:
 | `base_url` | wymagane | Bazowy URL API zgodnego z OpenAI |
 | `chat_path` | wymagane | Ścieżka endpointu chat completions |
 | `rpm` | brak limitu | Limit żądań na minutę wysyłanych przez gateway, wspólny dla wszystkich deploymentów providera |
-| `stream_usage` | `false` | Prosi o liczbę tokenów w streamie `/v1/messages`; włączać tylko dla providerów obsługujących `stream_options` |
 | `headers` | brak | Dodatkowe nagłówki HTTP wysyłane do providera, np. `HTTP-Referer` i `X-OpenRouter-Title`, dzięki którym OpenRouter pokazuje aplikację jako „Gateway LLM” zamiast „Unknown” |
 
 **`model_list`**
@@ -145,6 +144,7 @@ model_list:
 | `deployments[].model` | Nazwa modelu u providera |
 | `deployments[].api_key_env` | Zmienna środowiskowa z kluczem API |
 | `deployments[].order` | Kolejność prób (rosnąco) |
+| `deployments[].stream_usage` | Prosi o liczbę tokenów w streamie `/v1/messages` dla tego modelu (domyślnie `false`); włączać tylko dla modeli obsługujących `stream_options` |
 
 ### Routing i fallback
 
@@ -185,7 +185,7 @@ cd ~/gateway-llm
 | Tryb | Co sprawdza |
 |---|---|
 | `doctor` | `.env` i jego uprawnienia, poprawność `config.yaml`, `GATEWAY_API_KEY` i klucze providerów, usługę systemd i `linger`, odpowiedź `/healthz`, czy działająca usługa akceptuje klucz z `.env` |
-| `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz obsługę `stream_options` u każdego providera w porównaniu z `stream_usage` w konfiguracji |
+| `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz obsługę `stream_options` przez każdy model w porównaniu z jego `stream_usage` w konfiguracji |
 
 Wynik to lista `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` z podpowiedzią naprawy. Kod wyjścia `0` oznacza brak błędów `FAIL`.
 
@@ -295,7 +295,6 @@ See the example in the Polish section above — the file format is the same.
 | `base_url` | required | Base URL of the OpenAI-compatible API |
 | `chat_path` | required | Chat completions endpoint path |
 | `rpm` | no limit | Requests per minute sent by the gateway, shared by all deployments of the provider |
-| `stream_usage` | `false` | Requests token usage in `/v1/messages` streams; enable only for providers that support `stream_options` |
 | `headers` | none | Extra HTTP headers sent to the provider, e.g. `HTTP-Referer` and `X-OpenRouter-Title`, so OpenRouter lists the app as "Gateway LLM" instead of "Unknown" |
 
 **`model_list`**
@@ -308,6 +307,7 @@ See the example in the Polish section above — the file format is the same.
 | `deployments[].model` | Model name at the provider |
 | `deployments[].api_key_env` | Environment variable holding the API key |
 | `deployments[].order` | Attempt order (ascending) |
+| `deployments[].stream_usage` | Requests token usage in `/v1/messages` streams for this model (default `false`); enable only for models that support `stream_options` |
 
 ### Routing and fallback
 
@@ -348,7 +348,7 @@ cd ~/gateway-llm
 | Mode | Checks |
 |---|---|
 | `doctor` | `.env` and its permissions, `config.yaml` validity, `GATEWAY_API_KEY` and provider keys, the systemd service and `linger`, the `/healthz` response, whether the running service accepts the key from `.env` |
-| `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and `stream_options` support for each provider, compared with `stream_usage` in the configuration |
+| `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and `stream_options` support for each model, compared with its `stream_usage` in the configuration |
 
 The output lists `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` lines with a fix hint. Exit code `0` means no `FAIL`.
 

@@ -15,7 +15,6 @@ providers:
     base_url: https://openrouter.ai/api/v1
     chat_path: /chat/completions
     rpm: 20
-    stream_usage: true
     headers:
       HTTP-Referer: https://github.com/zbigniew73/gateway-llm
       X-OpenRouter-Title: Gateway LLM
@@ -23,17 +22,14 @@ providers:
     base_url: https://api.novita.ai/openai
     chat_path: /v1/chat/completions
     rpm: 60
-    stream_usage: true
   infron:
     base_url: https://llm.onerouter.pro
     chat_path: /v1/chat/completions
     rpm: 60
-    stream_usage: true
   nvidia:
     base_url: https://integrate.api.nvidia.com/v1
     chat_path: /chat/completions
     rpm: 40
-    stream_usage: false
 
 model_list:
   - model_name: claude-sonnet-4
@@ -43,10 +39,12 @@ model_list:
         model: anthropic/claude-sonnet-4
         api_key_env: OPENROUTER_API_KEY
         order: 1
+        stream_usage: true
       - provider: infron
         model: anthropic/claude-sonnet-4
         api_key_env: INFRON_API_KEY
         order: 2
+        stream_usage: true
 
   - model_name: gpt-4o
     deployments:
@@ -54,6 +52,7 @@ model_list:
         model: openai/gpt-4o
         api_key_env: OPENROUTER_API_KEY
         order: 1
+        stream_usage: true
 
   - model_name: glm-5.2
     deployments:
@@ -61,7 +60,9 @@ model_list:
         model: z-ai/glm-5.2
         api_key_env: INFRON_API_KEY
         order: 1
+        stream_usage: true
       - provider: novita
         model: zai-org/glm-5.2
         api_key_env: NOVITA_API_KEY
         order: 2
+        stream_usage: true

@@ -90,8 +90,6 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub rpm: Option<u32>,
     #[serde(default)]
-    pub stream_usage: bool,
-    #[serde(default)]
     pub headers: HashMap<String, String>,
 }
 
@@ -121,6 +119,8 @@ pub struct Deployment {
     pub api_key_env: String,
     #[serde(default)]
     pub order: i64,
+    #[serde(default)]
+    pub stream_usage: bool,
 }
 
 impl Deployment {
@@ -160,8 +160,15 @@ impl Config {
             source,
         })?;
 
-        let mut config: Config =
+        let value: serde_yaml_ng::Value =
             serde_yaml_ng::from_str(&raw).map_err(|source| ConfigError::Parse {
+                path: path.display().to_string(),
+                source,
+            })?;
+        reject_provider_stream_usage(&value)?;
+
+        let mut config: Config =
+            serde_yaml_ng::from_value(value).map_err(|source| ConfigError::Parse {
                 path: path.display().to_string(),
                 source,
             })?;
@@ -350,6 +357,21 @@ impl Config {
     }
 }
 
+fn reject_provider_stream_usage(value: &serde_yaml_ng::Value) -> Result<(), ConfigError> {
+    let Some(providers) = value.get("providers").and_then(|p| p.as_mapping()) else {
+        return Ok(());
+    };
+    for (name, provider) in providers {
+        if provider.get("stream_usage").is_some() {
+            let name = name.as_str().unwrap_or("?");
+            return Err(ConfigError::Invalid(format!(
+                "provider '{name}': 'stream_usage' ustawia się teraz przy deploymentach (model_list[].deployments[].stream_usage) — usuń je z sekcji providera"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn default_host() -> String {
     "127.0.0.1".to_string()
 }
@@ -391,7 +413,6 @@ mod tests {
             base_url: "https://example.test".to_string(),
             chat_path: "/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         }
     }
@@ -402,6 +423,7 @@ mod tests {
             model: "upstream-model".to_string(),
             api_key_env: "SOME_KEY".to_string(),
             order: 0,
+            stream_usage: false,
         }
     }
 
@@ -422,6 +444,29 @@ mod tests {
             deployments: vec![deployment()],
             fallback_model: fallback.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn stream_usage_on_provider_is_rejected() {
+        let legacy: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str("providers:\n  novita:\n    stream_usage: true\n").unwrap();
+        let err = reject_provider_stream_usage(&legacy)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("provider 'novita'"), "{err}");
+
+        let current: serde_yaml_ng::Value = serde_yaml_ng::from_str(
+            "providers:\n  novita:\n    rpm: 60\nmodel_list:\n  - model_name: m\n    deployments:\n      - provider: novita\n        stream_usage: true\n",
+        )
+        .unwrap();
+        assert!(reject_provider_stream_usage(&current).is_ok());
+    }
+
+    #[test]
+    fn deployment_stream_usage_defaults_to_false() {
+        let deployment: Deployment =
+            serde_yaml_ng::from_str("provider: novita\nmodel: m\napi_key_env: K\n").unwrap();
+        assert!(!deployment.stream_usage);
     }
 
     #[test]

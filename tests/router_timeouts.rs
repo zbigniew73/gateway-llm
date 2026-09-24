@@ -38,7 +38,6 @@ fn config(port: u16, api_key_env: &str, connect: u64, non_stream: u64) -> Config
             base_url: format!("http://127.0.0.1:{port}"),
             chat_path: "/v1/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         },
     );
@@ -57,6 +56,7 @@ fn config(port: u16, api_key_env: &str, connect: u64, non_stream: u64) -> Config
                 model: "upstream".to_string(),
                 api_key_env: api_key_env.to_string(),
                 order: 0,
+                stream_usage: false,
             }],
             fallback_model: None,
         }],

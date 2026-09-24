@@ -46,7 +46,6 @@ mod tests {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             chat_path: "/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         };
         provider.headers.insert(
@@ -76,7 +75,6 @@ mod tests {
             base_url: "https://openrouter.ai/api/v1/".to_string(),
             chat_path: "/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         };
         assert_eq!(
@@ -88,7 +86,6 @@ mod tests {
             base_url: "https://llm.onerouter.pro".to_string(),
             chat_path: "v1/chat/completions".to_string(),
             rpm: None,
-            stream_usage: false,
             headers: Default::default(),
         };
         assert_eq!(
