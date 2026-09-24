@@ -9,6 +9,8 @@ use crate::protocol::openai::{
     OpenAiFunctionDef, OpenAiImageUrl, OpenAiTool, OpenAiToolCall,
 };
 
+const MAX_STOP_SEQUENCES: usize = 4;
+
 pub fn anthropic_to_openai_request(
     request: &MessagesRequest,
 ) -> Result<ChatCompletionRequest, AppError> {
@@ -82,14 +84,25 @@ pub fn anthropic_to_openai_request(
         max_tokens: request.max_tokens,
         temperature: request.temperature,
         top_p: request.top_p,
-        stop: request
-            .stop_sequences
-            .clone()
-            .filter(|sequences| !sequences.is_empty()),
+        stop: upstream_stop_sequences(request.stop_sequences()),
         stream: request.stream,
         tools: tools.filter(|tools| !tools.is_empty()),
         tool_choice,
     })
+}
+
+fn upstream_stop_sequences(sequences: &[String]) -> Option<Vec<String>> {
+    if sequences.is_empty() {
+        return None;
+    }
+    if sequences.len() > MAX_STOP_SEQUENCES {
+        tracing::warn!(
+            sent = MAX_STOP_SEQUENCES,
+            dropped = sequences.len() - MAX_STOP_SEQUENCES,
+            "za dużo 'stop_sequences' dla API OpenAI — wysyłam tylko pierwsze"
+        );
+    }
+    Some(sequences.iter().take(MAX_STOP_SEQUENCES).cloned().collect())
 }
 
 fn map_tool_choice(choice: &AnthropicToolChoice) -> Option<Value> {
@@ -153,6 +166,7 @@ fn build_user_messages(
     blocks: &[AnthropicContentBlock],
 ) -> (Vec<ChatMessage>, Option<ChatMessage>) {
     let mut tool_messages: Vec<ChatMessage> = Vec::new();
+    let mut tool_image_parts: Vec<OpenAiContentPart> = Vec::new();
     let mut parts: Vec<OpenAiContentPart> = Vec::new();
     let mut has_image = false;
 
@@ -180,6 +194,25 @@ fn build_user_messages(
                     .as_ref()
                     .map(|content| content.as_text())
                     .unwrap_or_default();
+                let images = content
+                    .as_ref()
+                    .map(|content| content.image_urls())
+                    .unwrap_or_default();
+                if !images.is_empty() {
+                    has_image = true;
+                    tool_image_parts.push(OpenAiContentPart::Text {
+                        text: format!("[obraz z wyniku narzędzia {tool_use_id}]"),
+                    });
+                    tool_image_parts.extend(images.into_iter().map(|url| {
+                        OpenAiContentPart::ImageUrl {
+                            image_url: OpenAiImageUrl { url },
+                        }
+                    }));
+                    if text.trim().is_empty() {
+                        text =
+                            "[wynik zawiera obraz — przekazany w następnej wiadomości]".to_string();
+                    }
+                }
                 if is_error.unwrap_or(false) {
                     text = format!("ERROR: {text}");
                 }
@@ -197,6 +230,9 @@ fn build_user_messages(
             | AnthropicContentBlock::Unknown => {}
         }
     }
+
+    tool_image_parts.append(&mut parts);
+    let parts = tool_image_parts;
 
     let user_message = if parts.is_empty() {
         None
@@ -224,7 +260,7 @@ fn build_user_messages(
     (tool_messages, user_message)
 }
 
-fn image_source_to_url(source: &ImageSource) -> Option<String> {
+pub(crate) fn image_source_to_url(source: &ImageSource) -> Option<String> {
     match source.kind.as_str() {
         "base64" => {
             let media_type = source.media_type.as_deref().unwrap_or("image/png");
@@ -233,5 +269,121 @@ fn image_source_to_url(source: &ImageSource) -> Option<String> {
         }
         "url" => source.url.clone(),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::anthropic::MessagesRequest;
+    use serde_json::json;
+
+    fn translate(value: Value) -> ChatCompletionRequest {
+        let request: MessagesRequest = serde_json::from_value(value).unwrap();
+        anthropic_to_openai_request(&request).unwrap()
+    }
+
+    #[test]
+    fn stop_sequences_are_capped_at_four() {
+        let request = translate(json!({
+            "model": "m",
+            "stop_sequences": ["a", "b", "c", "d", "e", "f"],
+            "messages": [{ "role": "user", "content": "hi" }]
+        }));
+        assert_eq!(request.stop.unwrap(), vec!["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn short_or_missing_stop_sequences_are_unchanged() {
+        let two = translate(json!({
+            "model": "m",
+            "stop_sequences": ["a", "b"],
+            "messages": [{ "role": "user", "content": "hi" }]
+        }));
+        assert_eq!(two.stop.unwrap(), vec!["a", "b"]);
+
+        let none = translate(json!({
+            "model": "m",
+            "stop_sequences": [],
+            "messages": [{ "role": "user", "content": "hi" }]
+        }));
+        assert!(none.stop.is_none());
+    }
+
+    #[test]
+    fn tool_result_image_is_forwarded_as_user_image_after_tool_message() {
+        let request = translate(json!({
+            "model": "m",
+            "messages": [
+                { "role": "user", "content": "co jest na screenshot.png?" },
+                { "role": "assistant", "content": [
+                    { "type": "tool_use", "id": "toolu_1", "name": "Read", "input": { "file_path": "screenshot.png" } }
+                ]},
+                { "role": "user", "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_1", "content": [
+                        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "iVBOR" } }
+                    ]}
+                ]}
+            ]
+        }));
+
+        let roles: Vec<&str> = request.messages.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["user", "assistant", "tool", "user"]);
+
+        let tool = serde_json::to_value(&request.messages[2]).unwrap();
+        assert_eq!(tool["tool_call_id"], "toolu_1");
+        assert!(tool["content"].as_str().unwrap().contains("obraz"));
+
+        let user = serde_json::to_value(&request.messages[3]).unwrap();
+        let parts = user["content"].as_array().unwrap();
+        assert_eq!(parts[0]["type"], "text");
+        assert!(parts[0]["text"].as_str().unwrap().contains("toolu_1"));
+        assert_eq!(parts[1]["type"], "image_url");
+        assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,iVBOR");
+    }
+
+    #[test]
+    fn tool_result_text_is_kept_next_to_image() {
+        let request = translate(json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": [
+                    { "type": "tool_use", "id": "toolu_2", "name": "Read", "input": {} }
+                ]},
+                { "role": "user", "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_2", "content": [
+                        { "type": "text", "text": "podpis" },
+                        { "type": "image", "source": { "type": "url", "url": "https://example.test/a.png" } }
+                    ]},
+                    { "type": "text", "text": "opisz to" }
+                ]}
+            ]
+        }));
+
+        let tool = serde_json::to_value(&request.messages[1]).unwrap();
+        assert_eq!(tool["content"], "podpis");
+
+        let user = serde_json::to_value(&request.messages[2]).unwrap();
+        let parts = user["content"].as_array().unwrap();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[1]["image_url"]["url"], "https://example.test/a.png");
+        assert_eq!(parts[2]["text"], "opisz to");
+    }
+
+    #[test]
+    fn text_only_tool_result_adds_no_user_message() {
+        let request = translate(json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": [
+                    { "type": "tool_use", "id": "toolu_3", "name": "Bash", "input": {} }
+                ]},
+                { "role": "user", "content": [
+                    { "type": "tool_result", "tool_use_id": "toolu_3", "content": "ok" }
+                ]}
+            ]
+        }));
+        let roles: Vec<&str> = request.messages.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, vec!["assistant", "tool"]);
     }
 }

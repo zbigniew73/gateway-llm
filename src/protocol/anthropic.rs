@@ -139,6 +139,21 @@ impl ToolResultContent {
             ToolResultContent::Blocks(blocks) => join_text_blocks(blocks),
         }
     }
+
+    pub fn image_urls(&self) -> Vec<String> {
+        match self {
+            ToolResultContent::Text(_) => Vec::new(),
+            ToolResultContent::Blocks(blocks) => blocks
+                .iter()
+                .filter_map(|block| match block {
+                    AnthropicContentBlock::Image { source } => {
+                        crate::protocol::translate::request::image_source_to_url(source)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

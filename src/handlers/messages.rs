@@ -11,7 +11,7 @@ use futures::StreamExt;
 use crate::error::{AnthropicError, AppError};
 use crate::handlers::new_request_id;
 use crate::protocol::anthropic::MessagesRequest;
-use crate::protocol::openai::{ChatCompletionChunk, ChatCompletionResponse};
+use crate::protocol::openai::{provider_error_code, ChatCompletionChunk, ChatCompletionResponse};
 use crate::protocol::translate::request::anthropic_to_openai_request;
 use crate::protocol::translate::response::openai_to_anthropic_response;
 use crate::protocol::translate::stream::{SseEvent, StreamState};
@@ -54,6 +54,7 @@ pub async fn handle(
         .await?;
 
     let thinking_enabled = thinking_enabled || dispatched.show_reasoning;
+    let provider = dispatched.provider.clone();
     let upstream = dispatched.response;
 
     if !stream {
@@ -69,6 +70,21 @@ pub async fn handle(
                 crate::error::truncate(String::from_utf8_lossy(&bytes).to_string(), 500)
             ))
         })?;
+
+        if let Some(message) = parsed.error_message() {
+            tracing::warn!(
+                request_id = %request_id,
+                provider = %provider,
+                error = %message,
+                "provider zwrócił błąd w odpowiedzi HTTP 200"
+            );
+            return Err(AppError::upstream(
+                provider,
+                provider_error_code(parsed.error.as_ref()).unwrap_or(502),
+                message,
+            )
+            .into());
+        }
 
         let translated =
             openai_to_anthropic_response(&parsed, &alias, thinking_enabled, &stop_sequences);
@@ -125,6 +141,17 @@ pub async fn handle(
                         if let Some(sse) = to_sse(&translated) {
                             yield Ok::<Event, Infallible>(sse);
                         }
+                    }
+                    if let Some(message) = chunk.error_message() {
+                        tracing::warn!(
+                            request_id = %request_id_for_stream,
+                            provider = %provider,
+                            error = %message,
+                            "provider zgłosił błąd w trakcie streamu — przerywam strumień"
+                        );
+                        break StreamOutcome::Aborted(format!(
+                            "provider '{provider}' zgłosił błąd: {message}"
+                        ));
                     }
                 }
                 Err(err) => {
