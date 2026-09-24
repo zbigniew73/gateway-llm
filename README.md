@@ -64,7 +64,7 @@ $EDITOR .env
 | Zmienna | Opis |
 |---|---|
 | `GATEWAY_API_KEY` | Klucz, którym klienci autoryzują się do gatewaya (wymagany) |
-| `OPENROUTER_API_KEY`, `NOVITA_API_KEY`, `INFRON_API_KEY`, `NVIDIA_API_KEY` | Klucze providerów, wskazywane przez `api_key_env` w `config.yaml` |
+| `OPENROUTER_API_KEY`, `NOVITA_API_KEY`, `INFRON_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `DEEPSEEK_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`, `GEMINI_API_KEY` | Klucze providerów, wskazywane przez `api_key_env` w `config.yaml` |
 | `GATEWAY_CONFIG` | Opcjonalna ścieżka do konfiguracji (domyślnie `./config.yaml`, następnie `config.yaml` obok binarki) |
 | `RUST_LOG` | Poziom logowania, np. `gateway_llm=info` |
 
@@ -270,7 +270,7 @@ $EDITOR .env
 | Variable | Description |
 |---|---|
 | `GATEWAY_API_KEY` | Key clients use to authenticate to the gateway (required) |
-| `OPENROUTER_API_KEY`, `NOVITA_API_KEY`, `INFRON_API_KEY`, `NVIDIA_API_KEY` | Provider keys, referenced by `api_key_env` in `config.yaml` |
+| `OPENROUTER_API_KEY`, `NOVITA_API_KEY`, `INFRON_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `DEEPSEEK_API_KEY`, `ZAI_API_KEY`, `MOONSHOT_API_KEY`, `GEMINI_API_KEY` | Provider keys, referenced by `api_key_env` in `config.yaml` |
 | `GATEWAY_CONFIG` | Optional configuration path (default `./config.yaml`, then `config.yaml` next to the binary) |
 | `RUST_LOG` | Log level, e.g. `gateway_llm=info` |
 

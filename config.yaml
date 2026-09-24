@@ -30,6 +30,27 @@ providers:
     base_url: https://integrate.api.nvidia.com/v1
     chat_path: /chat/completions
     rpm: 40
+  groq:
+    base_url: https://api.groq.com/openai/v1
+    chat_path: /chat/completions
+    rpm: 30
+  cerebras:
+    base_url: https://api.cerebras.ai/v1
+    chat_path: /chat/completions
+    rpm: 30
+  deepseek:
+    base_url: https://api.deepseek.com/v1
+    chat_path: /chat/completions
+  zai:
+    base_url: https://api.z.ai/api/paas/v4
+    chat_path: /chat/completions
+  moonshot:
+    base_url: https://api.moonshot.ai/v1
+    chat_path: /chat/completions
+  gemini:
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    chat_path: /chat/completions
+    rpm: 10
 
 model_list:
   - model_name: claude-sonnet-4
