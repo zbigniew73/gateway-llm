@@ -121,6 +121,8 @@ pub struct Deployment {
     pub order: i64,
     #[serde(default)]
     pub stream_usage: bool,
+    #[serde(default)]
+    pub show_reasoning: bool,
 }
 
 impl Deployment {
@@ -424,6 +426,7 @@ mod tests {
             api_key_env: "SOME_KEY".to_string(),
             order: 0,
             stream_usage: false,
+            show_reasoning: false,
         }
     }
 
@@ -463,10 +466,11 @@ mod tests {
     }
 
     #[test]
-    fn deployment_stream_usage_defaults_to_false() {
+    fn deployment_flags_default_to_false() {
         let deployment: Deployment =
             serde_yaml_ng::from_str("provider: novita\nmodel: m\napi_key_env: K\n").unwrap();
         assert!(!deployment.stream_usage);
+        assert!(!deployment.show_reasoning);
     }
 
     #[test]

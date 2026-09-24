@@ -17,6 +17,7 @@ pub struct Dispatched {
     pub response: reqwest::Response,
     pub provider: String,
     pub upstream_model: String,
+    pub show_reasoning: bool,
     pub attempts: usize,
 }
 
@@ -240,6 +241,7 @@ impl Router {
                             response,
                             provider: deployment.provider.clone(),
                             upstream_model: deployment.model.clone(),
+                            show_reasoning: deployment.show_reasoning,
                             attempts,
                         });
                     }

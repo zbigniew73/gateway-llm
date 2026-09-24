@@ -145,6 +145,7 @@ model_list:
 | `deployments[].api_key_env` | Zmienna środowiskowa z kluczem API |
 | `deployments[].order` | Kolejność prób (rosnąco) |
 | `deployments[].stream_usage` | Prosi o liczbę tokenów w streamie `/v1/messages` dla tego modelu (domyślnie `false`); włączać tylko dla modeli obsługujących `stream_options` |
+| `deployments[].show_reasoning` | Zawsze przekazuje myślenie modelu (`reasoning_content`/`reasoning`) do `/v1/messages` jako bloki `thinking`, także gdy klient nie włączył thinking (domyślnie `false`) |
 
 ### Routing i fallback
 
@@ -185,7 +186,7 @@ cd ~/gateway-llm
 | Tryb | Co sprawdza |
 |---|---|
 | `doctor` | `.env` i jego uprawnienia, poprawność `config.yaml`, `GATEWAY_API_KEY` i klucze providerów, usługę systemd i `linger`, odpowiedź `/healthz`, czy działająca usługa akceptuje klucz z `.env` |
-| `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz obsługę `stream_options` przez każdy model w porównaniu z jego `stream_usage` w konfiguracji |
+| `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz dla każdego modelu: obsługę `stream_options` w porównaniu z `stream_usage` i to, czy zwraca myślenie, w porównaniu z `show_reasoning` |
 
 Wynik to lista `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` z podpowiedzią naprawy. Kod wyjścia `0` oznacza brak błędów `FAIL`.
 
@@ -308,6 +309,7 @@ See the example in the Polish section above — the file format is the same.
 | `deployments[].api_key_env` | Environment variable holding the API key |
 | `deployments[].order` | Attempt order (ascending) |
 | `deployments[].stream_usage` | Requests token usage in `/v1/messages` streams for this model (default `false`); enable only for models that support `stream_options` |
+| `deployments[].show_reasoning` | Always forwards the model's reasoning (`reasoning_content`/`reasoning`) on `/v1/messages` as `thinking` blocks, even when the client did not enable thinking (default `false`) |
 
 ### Routing and fallback
 
@@ -348,7 +350,7 @@ cd ~/gateway-llm
 | Mode | Checks |
 |---|---|
 | `doctor` | `.env` and its permissions, `config.yaml` validity, `GATEWAY_API_KEY` and provider keys, the systemd service and `linger`, the `/healthz` response, whether the running service accepts the key from `.env` |
-| `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and `stream_options` support for each model, compared with its `stream_usage` in the configuration |
+| `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and for each model: `stream_options` support compared with `stream_usage`, and whether it returns reasoning, compared with `show_reasoning` |
 
 The output lists `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` lines with a fix hint. Exit code `0` means no `FAIL`.
 

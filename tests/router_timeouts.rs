@@ -57,6 +57,7 @@ fn config(port: u16, api_key_env: &str, connect: u64, non_stream: u64) -> Config
                 api_key_env: api_key_env.to_string(),
                 order: 0,
                 stream_usage: false,
+                show_reasoning: false,
             }],
             fallback_model: None,
         }],

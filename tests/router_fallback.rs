@@ -52,6 +52,7 @@ fn deployment(provider: &str, api_key_env: &str, order: i64) -> Deployment {
         api_key_env: api_key_env.to_string(),
         order,
         stream_usage: false,
+        show_reasoning: false,
     }
 }
 

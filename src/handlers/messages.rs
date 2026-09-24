@@ -53,6 +53,7 @@ pub async fn handle(
         .dispatch(&alias, &payload, stream, true, &request_id)
         .await?;
 
+    let thinking_enabled = thinking_enabled || dispatched.show_reasoning;
     let upstream = dispatched.response;
 
     if !stream {

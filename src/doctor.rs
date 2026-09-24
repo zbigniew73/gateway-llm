@@ -3,10 +3,13 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use eventsource_stream::Eventsource;
+use futures::StreamExt;
 use serde_json::{json, Value};
 
 use crate::config::{Config, ConfigError, Deployment, ProviderConfig};
 use crate::error::truncate;
+use crate::protocol::openai::{reasoning_str, ChatCompletionChunk};
 use crate::providers;
 
 const PROVIDER_TIMEOUT: Duration = Duration::from_secs(60);
@@ -397,6 +400,13 @@ async fn check_providers_live(report: &mut Report, config: &Config) {
             level,
             format!("{}/{}: {message}", deployment.provider, deployment.model),
         );
+
+        let probe = probe_reasoning(&client, provider, &deployment.model, &api_key).await;
+        let (level, message) = show_reasoning_verdict(deployment.show_reasoning, &probe);
+        report.line(
+            level,
+            format!("{}/{}: {message}", deployment.provider, deployment.model),
+        );
     }
 }
 
@@ -527,6 +537,105 @@ fn stream_usage_verdict(enabled: bool, probe: &StreamUsageProbe) -> (Level, Stri
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReasoningProbe {
+    Separate,
+    InlineTags,
+    Absent,
+    Error(String),
+}
+
+async fn probe_reasoning(
+    client: &reqwest::Client,
+    provider: &ProviderConfig,
+    model: &str,
+    api_key: &str,
+) -> ReasoningProbe {
+    let body = json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": "Ile to 17 * 23? Podaj tylko wynik." }],
+        "max_tokens": 300,
+        "stream": true
+    });
+    let response = match providers::build_request(client, provider, api_key, &body, None)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(err) => return ReasoningProbe::Error(err.to_string()),
+    };
+    let status = response.status().as_u16();
+    if !(200..=299).contains(&status) {
+        return ReasoningProbe::Error(format!("HTTP {status}"));
+    }
+
+    let mut events = Box::pin(response.bytes_stream().eventsource());
+    while let Some(event) = events.next().await {
+        let event = match event {
+            Ok(event) => event,
+            Err(err) => return ReasoningProbe::Error(err.to_string()),
+        };
+        let data = event.data.trim();
+        if data == "[DONE]" {
+            break;
+        }
+        let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(data) else {
+            continue;
+        };
+        for choice in &chunk.choices {
+            if reasoning_str(&choice.delta.reasoning_content, &choice.delta.reasoning).is_some() {
+                return ReasoningProbe::Separate;
+            }
+            if let Some(text) = choice
+                .delta
+                .content
+                .as_deref()
+                .map(str::trim_start)
+                .filter(|text| !text.is_empty())
+            {
+                return if text.starts_with("<think>") {
+                    ReasoningProbe::InlineTags
+                } else {
+                    ReasoningProbe::Absent
+                };
+            }
+        }
+    }
+    ReasoningProbe::Absent
+}
+
+fn show_reasoning_verdict(enabled: bool, probe: &ReasoningProbe) -> (Level, String) {
+    match (probe, enabled) {
+        (ReasoningProbe::Separate, true) => (
+            Level::Ok,
+            "show_reasoning: model zwraca myślenie i jest włączone".to_string(),
+        ),
+        (ReasoningProbe::Separate, false) => (
+            Level::Info,
+            "show_reasoning: model zwraca myślenie — możesz ustawić show_reasoning: true"
+                .to_string(),
+        ),
+        (ReasoningProbe::Absent, true) => (
+            Level::Warn,
+            "show_reasoning: model nie zwraca myślenia (reasoning_content/reasoning) — show_reasoning: true nic nie daje"
+                .to_string(),
+        ),
+        (ReasoningProbe::Absent, false) => (
+            Level::Ok,
+            "show_reasoning: model nie zwraca myślenia, wyłączone — poprawnie".to_string(),
+        ),
+        (ReasoningProbe::InlineTags, _) => (
+            Level::Warn,
+            "show_reasoning: model wpisuje myślenie w treść (<think>) — trafi do Claude Code jako zwykły tekst"
+                .to_string(),
+        ),
+        (ReasoningProbe::Error(err), _) => (
+            Level::Warn,
+            format!("show_reasoning: nie udało się sprawdzić ({err})"),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,6 +675,66 @@ mod tests {
     const SSE_WITH_USAGE: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n";
     const SSE_WITHOUT_USAGE: &str =
         "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
+
+    const SSE_REASONING: &str = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"reasoning_content\":\"17*23\"}}]}\n\ndata: [DONE]\n\n";
+    const SSE_OPENROUTER_REASONING: &str =
+        "data: {\"choices\":[{\"delta\":{\"reasoning\":\"17*23\"}}]}\n\ndata: [DONE]\n\n";
+    const SSE_THINK_TAGS: &str =
+        "data: {\"choices\":[{\"delta\":{\"content\":\"<think>17*23\"}}]}\n\ndata: [DONE]\n\n";
+
+    #[tokio::test]
+    async fn reasoning_probe_detects_separate_inline_and_absent() {
+        let separate = mock(200, "text/event-stream", SSE_REASONING).await;
+        let openrouter = mock(200, "text/event-stream", SSE_OPENROUTER_REASONING).await;
+        let inline = mock(200, "text/event-stream", SSE_THINK_TAGS).await;
+        let absent = mock(200, "text/event-stream", SSE_WITHOUT_USAGE).await;
+        let failing = mock(500, "application/json", "{}").await;
+
+        assert_eq!(
+            probe_reasoning(&client(), &separate, "m", "k").await,
+            ReasoningProbe::Separate
+        );
+        assert_eq!(
+            probe_reasoning(&client(), &openrouter, "m", "k").await,
+            ReasoningProbe::Separate
+        );
+        assert_eq!(
+            probe_reasoning(&client(), &inline, "m", "k").await,
+            ReasoningProbe::InlineTags
+        );
+        assert_eq!(
+            probe_reasoning(&client(), &absent, "m", "k").await,
+            ReasoningProbe::Absent
+        );
+        assert_eq!(
+            probe_reasoning(&client(), &failing, "m", "k").await,
+            ReasoningProbe::Error("HTTP 500".to_string())
+        );
+    }
+
+    #[test]
+    fn show_reasoning_verdicts_match_config() {
+        assert_eq!(
+            show_reasoning_verdict(true, &ReasoningProbe::Separate).0,
+            Level::Ok
+        );
+        assert_eq!(
+            show_reasoning_verdict(false, &ReasoningProbe::Separate).0,
+            Level::Info
+        );
+        assert_eq!(
+            show_reasoning_verdict(true, &ReasoningProbe::Absent).0,
+            Level::Warn
+        );
+        assert_eq!(
+            show_reasoning_verdict(false, &ReasoningProbe::Absent).0,
+            Level::Ok
+        );
+        assert_eq!(
+            show_reasoning_verdict(false, &ReasoningProbe::InlineTags).0,
+            Level::Warn
+        );
+    }
 
     #[tokio::test]
     async fn working_deployment_is_reported_ok() {
