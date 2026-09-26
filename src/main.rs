@@ -7,11 +7,13 @@ use gateway_llm::router::Router;
 use gateway_llm::state::AppState;
 use tracing_subscriber::EnvFilter;
 
-const USAGE: &str = "użycie: gateway-llm [doctor [--providers]]
+const USAGE: &str = "użycie: gateway-llm [doctor [--providers] [--latency]]
 
-  (bez argumentów)     uruchamia gateway
-  doctor               sprawdza instalację, konfigurację i działającą usługę
-  doctor --providers   dodatkowo testuje każdy deployment jednym małym żądaniem";
+  (bez argumentów)               uruchamia gateway
+  doctor                         sprawdza instalację, konfigurację i działającą usługę
+  doctor --providers             dodatkowo testuje każdy deployment jednym małym żądaniem
+  doctor --providers --latency   dodatkowo mierzy szybkość każdego deploymentu na dużym prompcie
+                                 i podpowiada kolejność order w aliasach (zużywa limity providerów)";
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -22,12 +24,18 @@ async fn main() -> ExitCode {
         None => {}
         Some("doctor") => {
             let flags = &args[1..];
-            if let Some(unknown) = flags.iter().find(|flag| *flag != "--providers") {
+            if let Some(unknown) = flags
+                .iter()
+                .find(|flag| !matches!(flag.as_str(), "--providers" | "--latency"))
+            {
                 eprintln!("nieznana opcja doctor: {unknown}\n\n{USAGE}");
                 return ExitCode::from(2);
             }
-            let check_providers = !flags.is_empty();
-            return if gateway_llm::doctor::run(env_file.as_deref(), check_providers).await {
+            let check_providers = flags.iter().any(|flag| flag == "--providers");
+            let check_latency = flags.iter().any(|flag| flag == "--latency");
+            return if gateway_llm::doctor::run(env_file.as_deref(), check_providers, check_latency)
+                .await
+            {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE

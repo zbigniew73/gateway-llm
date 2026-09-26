@@ -181,12 +181,14 @@ model:    <alias z config.yaml>
 cd ~/gateway-llm
 ./target/release/gateway-llm doctor
 ./target/release/gateway-llm doctor --providers
+./target/release/gateway-llm doctor --providers --latency
 ```
 
 | Tryb | Co sprawdza |
 |---|---|
 | `doctor` | `.env` i jego uprawnienia, poprawność `config.yaml`, `GATEWAY_API_KEY` i klucze providerów, usługę systemd i `linger`, odpowiedź `/healthz`, czy działająca usługa akceptuje klucz z `.env` |
 | `doctor --providers` | Dodatkowo: jedno żądanie (`max_tokens: 5`) na każdy deployment oraz dla każdego modelu: obsługę `stream_options` w porównaniu z `stream_usage` i to, czy zwraca myślenie, w porównaniu z `show_reasoning` |
+| `doctor --providers --latency` | Dodatkowo: dla każdego działającego deploymentu streamowane żądanie z dużym promptem (~20 tys. tokenów, jak zapytanie z Claude Code). Podaje czas do nagłówków, do pierwszego tokenu, całość i tok/s; porównuje czas nagłówków z `connect_timeout_seconds`. Dla każdego aliasu z co najmniej dwoma deploymentami podpowiada, czy najszybszy jest pierwszy w `order` (różnica poniżej 20% jest traktowana jako szum). Zużywa limity providerów — uruchamiaj ręcznie, nie przy każdym sprawdzeniu |
 
 Wynik to lista `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` z podpowiedzią naprawy. Kod wyjścia `0` oznacza brak błędów `FAIL`.
 
@@ -345,12 +347,14 @@ model:    <alias from config.yaml>
 cd ~/gateway-llm
 ./target/release/gateway-llm doctor
 ./target/release/gateway-llm doctor --providers
+./target/release/gateway-llm doctor --providers --latency
 ```
 
 | Mode | Checks |
 |---|---|
 | `doctor` | `.env` and its permissions, `config.yaml` validity, `GATEWAY_API_KEY` and provider keys, the systemd service and `linger`, the `/healthz` response, whether the running service accepts the key from `.env` |
 | `doctor --providers` | Additionally: one request (`max_tokens: 5`) per deployment and for each model: `stream_options` support compared with `stream_usage`, and whether it returns reasoning, compared with `show_reasoning` |
+| `doctor --providers --latency` | Additionally: for every working deployment, a streamed request with a large prompt (~20k tokens, like a Claude Code request). Reports time to headers, to the first token, total time and tok/s; compares the header time with `connect_timeout_seconds`. For every alias with at least two deployments it tells whether the fastest one is first in `order` (differences below 20% are treated as noise). It uses provider quota — run it manually, not on every check |
 
 The output lists `[ OK ]` / `[INFO]` / `[WARN]` / `[FAIL]` lines with a fix hint. Exit code `0` means no `FAIL`.
 
